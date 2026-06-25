@@ -2,19 +2,17 @@ from gpiozero import AngularServo
 from time import sleep, time
 import math
 
-# Pan servo signal  -> GPIO 17 (physical pin 11)
-# Tilt servo signal -> GPIO 18 (physical pin 12)
-pan = AngularServo(17, min_angle=-90, max_angle=90,
-                   min_pulse_width=0.5/1000, max_pulse_width=2.5/1000)
-tilt = AngularServo(18, min_angle=-90, max_angle=90,
-                    min_pulse_width=0.5/1000, max_pulse_width=2.5/1000)
+# pan is for pin 11, GPIO 17
+# tilt is for pin 12, GPIO 18
+pan = AngularServo(17, min_angle =- 90, max_angle = 90, min_pulse = 0.5/1000, max_pulse = 2.5/1000)
+tilt = AngularServo(18, min_angle =- 90, max_angle = 90, min_pulse = 0.5/1000, max_pulse = 2.5/1000)
 
 def center():
     pan.angle = 0
     tilt.angle = 0
     sleep(0.5)
 
-print("Centering both servos...")
+print("Centering...")
 center()
 sleep(1)
 
@@ -27,8 +25,8 @@ try:
         tilt.angle = 25 * math.sin(2 * math.pi * t / 6.0)   # tilt: gentle ±25°
         sleep(0.02)
 except KeyboardInterrupt:
-    print("\nStopping, re-centering.")
+    print("\nStopping and centering...")
     center()
     pan.detach()
     tilt.detach()
-    print("Done.")
+    print("Complete!")

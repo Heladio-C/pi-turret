@@ -33,5 +33,5 @@ This project uses a Python virtual environment to keep dependencies clean.
 
 ### 1. Clone & Navigate to Project
 ```bash
-git clone <your-github-repo-url>
+git clone https://github.com/Heladio-C/pi-turret
 cd pi-turret

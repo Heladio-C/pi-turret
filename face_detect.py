@@ -2,7 +2,7 @@ import cv2
 from picamera2 import Picamera2
 from time import sleep
 
-#start the camera
+#time to start the camera
 picam = Picamera2()
 config = picam.create_still_configuration(main={"size": (640, 480)})
 picam.configure(config)

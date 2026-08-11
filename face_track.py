@@ -40,6 +40,10 @@ PAN_DIR = -1 # 1 = normal, -1 = reverse. Change this if your servo is moving in 
 TILT_DIR = -1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
 PORT = 8000
 
+SMOOTHING = 0.2
+
+SHOW_ZONES = True
+DETECT_MARGIN = 40
 
 
 #functions that control the servos
@@ -161,6 +165,10 @@ print(f"Streaming server started on http://turretpi.local:8000")
 
 pan_angle = 0.0
 tilt_angle = 0.0
+target_pan = 0.0
+target_tilt = 0.0
+
+
 pan_servo.angle = pan_angle
 tilt_servo.angle = tilt_angle
 attatched = True
@@ -194,12 +202,20 @@ try:
             if abs(dx) > DEADZONE or abs(dy) > DEADZONE:
                 pan_error = (dx / WIDTH) * HORIZONTAL_FOV
                 tilt_error = (dy / HEIGHT) * VERTICAL_FOV
+
                 pan_step = clamp(GAIN * pan_error, -MAX_STEP, MAX_STEP)
                 tilt_step = clamp(GAIN * tilt_error, -MAX_STEP, MAX_STEP)
-                pan_angle = clamp(pan_angle + PAN_DIR * pan_step, -ANGLE_LIMIT, ANGLE_LIMIT)
-                tilt_angle = clamp(tilt_angle + TILT_DIR * tilt_step, -ANGLE_LIMIT, ANGLE_LIMIT)
+
+                target_pan = clamp(target_pan + PAN_DIR * pan_step, -ANGLE_LIMIT, ANGLE_LIMIT)
+                target_tilt = clamp(target_tilt + TILT_DIR * tilt_step, -ANGLE_LIMIT, ANGLE_LIMIT)
+
+
+                pan_angle = clamp(target_pan - pan_angle) * SMOOTHING
+                tilt_angle = clamp(target_tilt - tilt_angle) * SMOOTHING
+
                 pan_servo.angle = pan_angle
                 tilt_servo.angle = tilt_angle
+
                 attatched = True
                 idle_count = 0
                 moved = True

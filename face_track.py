@@ -210,8 +210,8 @@ try:
                 target_tilt = clamp(target_tilt + TILT_DIR * tilt_step, -ANGLE_LIMIT, ANGLE_LIMIT)
 
 
-                pan_angle = clamp(target_pan - pan_angle) * SMOOTHING
-                tilt_angle = clamp(target_tilt - tilt_angle) * SMOOTHING
+                pan_angle += (target_pan - pan_angle) * SMOOTHING
+                tilt_angle +=(target_tilt - tilt_angle) * SMOOTHING
 
                 pan_servo.angle = pan_angle
                 tilt_servo.angle = tilt_angle

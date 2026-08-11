@@ -121,7 +121,7 @@ PAGE = (b"<html><head><title>Turret - face tracking</title></head>"
 
 
 class StreamingHandler(BaseHTTPRequestHandler):
-    def do_Get(self):
+    def do_GET(self):
         if self.path == "/":
             self.send_response(200)
             self.send_header("Content-type", "text/html")

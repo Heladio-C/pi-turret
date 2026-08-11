@@ -57,21 +57,23 @@ def clamp(value, low, high):
 
 #this function will find the path to the Haar cascade file
 def find_cascade():
-
-    candidates = []
+    # Start by checking the current directory
+    candidates = ["haarcascade_frontalface_default.xml"]
+    
     haarcascades = getattr(getattr(cv2, "data", None), "haarcascades", None)
-
     if haarcascades:
         candidates.append(haarcascades + "haarcascade_frontalface_default.xml")
-    candidates += ["/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
-                   "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml",]
+        
+    candidates += [
+        "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
+        "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml"
+    ]
 
     for path in candidates:
         if path and os.path.exists(path):
             return path
+            
     raise FileNotFoundError("Could not find .xml file.")
-
-
 
 
 

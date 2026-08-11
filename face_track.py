@@ -36,8 +36,8 @@ MAX_STEP = 2.5 # Stops sudden movements of the servo, which can cause overshoot 
 DEADZONE = 25 # if face is within this many pixels of the center, don't move the servo. This prevents jittering when the face is near the center.
 ANGLE_LIMIT = 80.0 #deg: never allow the servo to go beyond this angle, to prevent hitting the physical limits of the servo and causing damage.
 RELAX_AFTER = 25 # frames with nothing to do , before we detach the servo and let it relax. This prevents the servo from overheating and wearing out prematurely.
-PAN_DIR = -1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
-TILT_DIR = -1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
+PAN_DIR = 1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
+TILT_DIR = 1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
 PORT = 8000
 
 SMOOTHING = 0.2

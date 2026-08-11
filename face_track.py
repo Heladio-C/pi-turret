@@ -42,8 +42,8 @@ ANGLE_LIMIT = 80.0 #deg: never allow the servo to go beyond this angle, to preve
 RELAX_AFTER = 25 # frames with nothing to do , before we detach the servo and let it relax. This prevents the servo from overheating and wearing out prematurely.
 
 
-PAN_DIR = 1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
-TILT_DIR = 1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
+PAN_DIR = -1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
+TILT_DIR = -1 # 1 = normal, -1 = reverse. Change this if your servo is moving in the wrong direction.
 
 
 PORT = 8000

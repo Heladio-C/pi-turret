@@ -153,7 +153,7 @@ def serve():
     ThreadingHTTPServer(("", PORT), StreamingHandler).serve_forever()
 
 threading.Thread(target=serve, daemon=True).start()
-print(f"Streaming server started on http://localhost:turret.pi")
+print(f"Streaming server started on http://turretpi.local:8000")
 
 
 

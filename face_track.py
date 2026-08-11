@@ -1,7 +1,7 @@
 """
 "Open-loop = correction in each frame, with no smoothing yet. Exception some hunting / overshoot / or jittering may occur. 
 
-HARDWARE: Raspberry Pi 4B, Raspberry Pi Camera Module v2.1, 8GB RAM, 64-bit OS
+HARDWARE: Raspberry Pi 5, Raspberry Pi Camera Module v2.1, 8GB RAM, 64-bit OS
 
 RUN: python3 face_track.py
 Then open http://turretpi.local:8000 in a browser to view the camera feed. The camera will track faces in real-time.
@@ -33,10 +33,10 @@ HEIGHT = 480
 HORIZONTAL_FOV = 66.0
 VERTICAL_FOV = 41.0
 
-GAIN = 0.20
+GAIN = 0.10
 
-MAX_STEP = 6.0 # Stops sudden movements of the servo, which can cause overshoot and hunting. This is the maximum angle change per frame.
-DEADZONE = 35 # if face is within this many pixels of the center, don't move the servo. This prevents jittering when the face is near the center.
+MAX_STEP = 2.5 # Stops sudden movements of the servo, which can cause overshoot and hunting. This is the maximum angle change per frame.
+DEADZONE = 25 # if face is within this many pixels of the center, don't move the servo. This prevents jittering when the face is near the center.
 
 ANGLE_LIMIT = 80.0 #deg: never allow the servo to go beyond this angle, to prevent hitting the physical limits of the servo and causing damage.
 RELAX_AFTER = 25 # frames with nothing to do , before we detach the servo and let it relax. This prevents the servo from overheating and wearing out prematurely.
@@ -161,7 +161,7 @@ def serve():
     ThreadingHTTPServer(("", PORT), StreamingHandler).serve_forever()
 
 threading.Thread(target=serve, daemon=True).start()
-print(f"Streaming server started on http://localhost:{PORT}")
+print(f"Streaming server started on http://localhost:turret.pi")
 
 
 
@@ -185,7 +185,6 @@ fps = 0.0
 try:
     while True:
         frame = cam.capture_array()
-        frame = cv2.cvtColor(frame, cv2.COLOR_RGB2BGR)
         gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
 
         faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(60, 60))

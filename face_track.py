@@ -232,6 +232,18 @@ try:
                 attatched = False
 
 
+
+        
+        if SHOW_ZONES:
+            #DETECTION AREA: organge
+            cv2.rectangle(frame, (DETECT_MARGIN, DETECT_MARGIN), (WIDTH - DETECT_MARGIN, HEIGHT - DETECT_MARGIN), (0, 165, 255), 1)
+            cv2.putText(frame, "detection area", (DETECT_MARGIN + 5, DETECT_MARGIN + 16), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
+
+            #TARGET ZONE cyan
+            cv2.rectangle(frame, (int(cx-DEADZONE), int(cy - DEADZONE)), (int(cx+DEADZONE), int(cy + DEADZONE)), (255, 255, 0), 1)
+            cv2.putText(frame, "target zone", (int(cx - DEADZONE), int(cy - DEADZONE) - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+
         #crosshairs for visualization
         cv2.drawMarker(frame, (int(cx), int(cy)), (255, 255, 255), cv2.MARKER_CROSS, 18, 1)
         status = "Tracking" if len(faces) > 0 else "Searching..."

@@ -128,5 +128,65 @@ time.sleep(1)
 face_cascade = cv2.CascadeClassifier(find_cascade())
 
 
+class StreamingOutput:
+    def __init__(self):
+        self.frame = None
+        self.condition = threading.Condition()
+
+    def write(self, buf):
+        with self.condition:
+            self.frame = buf
+            self.condition.notify_all()
+
+
+output = StreamingOutput()
+
+
+PAGE = (b"<html><head><title>Turret - face tracking </title></head>"
+        b"<body style='margin:0;background:#111'>"
+        b"<img src='strean.mjpg' style='display:block;width:100vw;height:100vh;object-fit:cointain'/>"
+        b"</body></html>")
+
+
+class StreamingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/":
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.end_headers()
+            self.wfile.write(PAGE)
+        elif self.path == "/stream.mjpg":
+            self.send_response(200)
+            self.send_header("Cache-Control", "no-cache, private")
+            self.send_header("Content-type", "multipart/x-mixed-replace; boundary=FRAME")
+            self.end_headers()
+            try:
+                while True:
+                    with output.condition:
+                        output.condition.wait()
+                        frame = output.frame
+
+                    self.wfile.write(b"--FRAME\r\n")
+                    self.send_header("Content-Type", "image/jpeg")
+                    self.send_header("Content-Length", str(len(frame)))
+                    self.end_headers()
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            self.send_error(404)
+
+    def log_message(self, *args):
+        pass
+
+
+def serve():
+    ThreadingHTTPServer(("", PORT), StreamingHandler).serve_forever()
+
+
+threading.Thread(target=serve, daemon=True).start()
+print(f"Streaming server on http://turretpi.local:{PORT}")
+
 
 

@@ -77,8 +77,55 @@ SERVO_HZ = 50
 PAN_SERVO_MIN, PAN_SERVO_MAX = -90.0, 90.0 #RANGE OF PANNING
 TILT_SERVO_MIN, TILT_SERVO_MAX = 0.0, 180.0 #RANGE OF TILTING
 
+
+ #this will limit hardware from being damaged by not going over limits   
 def clamp(value, low, high):
     return max(low, min(value, high))
+
+
+
+
+def angle_to_duty(angle, low, high):
+    fraction = clamp((angle - low) / (high - low), 0.0, 1.0)
+    return 2.5 + fraction * 10.0
+
+
+
+#looks for the pre-trained XML file with thousands examples of faces that will help detect faces
+
+def find_cascade():
+    candidates = ["haarcascade_frontalface_default.xml"]
+
+    haarcascades = getattr(getattr(cv2, "data", None), "haarcascades", None)
+    if haarcascades:
+        candidates.append(haarcascades + "haarcascade_frontalface_default.xml")
+            
+    candidates += [
+        "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
+        "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml"
+    ]
+    
+    for path in candidates:
+        if path and os.path.exists(path):
+            return path  
+    raise FileNotFoundError("Could not find .xml file.")
+
+
+#Channel 3 is GPIO 19(Panning) and channel2 is GPIO18 (tilting)
+pan_pwm = HardwarePWM(pwm_channel=3, hz=SERVO_HZ, chip=PWM_CHIP)
+tilt_pwm = HardwarePWM(pwm_channel=2, hz = SERVO_HZ, chip = PWM_CHIP)
+
+pan_pwm.start(angle_to_duty(0.0, PAN_SERVO_MIN, PAN_SERVO_MAX))
+tilt_pwm.start(angle_to_duty(TILT_LEVEL, TILT_SERVO_MIN, TILT_SERVO_MAX))
+
+
+
+#activate camera
+cam = Picamera2()
+cam.configure(cam.create_video_coinfguration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}))
+cam.start()
+time.sleep(1)
+face_cascade = cv2.CascadeClassifier(find_cascade())
 
 
 

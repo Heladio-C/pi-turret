@@ -25,8 +25,6 @@ run: python face_track.py
 To stop: Ctrl + C 
     
 """
-
-import os 
 import time
 import threading
 import cv2
@@ -83,32 +81,9 @@ def clamp(value, low, high):
     return max(low, min(value, high))
 
 
-
-
 def angle_to_duty(angle, low, high):
     fraction = clamp((angle - low) / (high - low), 0.0, 1.0)
     return 2.5 + fraction * 10.0
-
-
-
-#looks for the pre-trained XML file with thousands examples of faces that will help detect faces
-
-def find_cascade():
-    candidates = ["haarcascade_frontalface_default.xml"]
-
-    haarcascades = getattr(getattr(cv2, "data", None), "haarcascades", None)
-    if haarcascades:
-        candidates.append(haarcascades + "haarcascade_frontalface_default.xml")
-            
-    candidates += [
-        "/usr/share/opencv4/haarcascades/haarcascade_frontalface_default.xml",
-        "/usr/share/opencv/haarcascades/haarcascade_frontalface_default.xml"
-    ]
-    
-    for path in candidates:
-        if path and os.path.exists(path):
-            return path  
-    raise FileNotFoundError("Could not find .xml file.")
 
 
 #Channel 3 is GPIO 19(Panning) and channel2 is GPIO18 (tilting)
@@ -122,10 +97,14 @@ tilt_pwm.start(angle_to_duty(TILT_LEVEL, TILT_SERVO_MIN, TILT_SERVO_MAX))
 
 #activate camera
 cam = Picamera2()
-cam.configure(cam.create_video_coinfguration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}))
+cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}))
 cam.start()
 time.sleep(1)
-face_cascade = cv2.CascadeClassifier(find_cascade())
+
+
+#looks for the pre-trained XML file with thousands examples of faces that will help detect faces
+
+face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
 
 
 class StreamingOutput:
@@ -144,7 +123,7 @@ output = StreamingOutput()
 
 PAGE = (b"<html><head><title>Turret - face tracking </title></head>"
         b"<body style='margin:0;background:#111'>"
-        b"<img src='strean.mjpg' style='display:block;width:100vw;height:100vh;object-fit:cointain'/>"
+        b"<img src='stream.mjpg' style='display:block;width:100vw;height:100vh;object-fit:contain'/>"
         b"</body></html>")
 
 
@@ -229,7 +208,7 @@ try:
                 pan_angle += (target_pan - pan_angle) * SMOOTHING
                 tilt_angle += (target_tilt - tilt_angle) * SMOOTHING
                 pan_pwm.change_duty_cycle(angle_to_duty(pan_angle, PAN_SERVO_MIN, PAN_SERVO_MAX))
-                tilt_pwm.change_duty_cyle(angle_to_duty(tilt_angle, TILT_SERVO_MIN, TILT_SERVO_MAX))
+                tilt_pwm.change_duty_cycle(angle_to_duty(tilt_angle, TILT_SERVO_MIN, TILT_SERVO_MAX))
 
             cv2.rectangle(frame, (x, y), (x + fw, y + fh), (0, 255, 0), 2)
             cv2.line(frame, (int(cx), int(cy)), (int(face_cx), int(face_cy)), (0, 255, 255), 1)
@@ -266,8 +245,3 @@ finally:
     pan_pwm.stop()
     tilt_pwm.stop()
     cam.stop()
-    
-
-
-
-

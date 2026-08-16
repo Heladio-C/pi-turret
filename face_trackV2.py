@@ -104,7 +104,7 @@ time.sleep(1)
 
 #looks for the pre-trained XML file with thousands examples of faces that will help detect faces
 
-face_cascade = cv2.CascadeClassifier(cv2.data.haarcascades + "haarcascade_frontalface_default.xml")
+face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
 
 
 class StreamingOutput:

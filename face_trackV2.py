@@ -189,4 +189,85 @@ threading.Thread(target=serve, daemon=True).start()
 print(f"Streaming server on http://turretpi.local:{PORT}")
 
 
+pan_angle = 0.0
+tilt_angle = TILT_LEVEL
+target_pan = 0.0
+target_tilt = TILT_LEVEL
+
+cx = WIDTH / 2
+cy = HEIGHT / 2
+
+last_time = time.time()
+fps = 0.0
+
+try:
+    while True:
+        frame = cam.capture_array()
+        gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+
+        faces = face_cascade.detectMultiScale(gray, scaleFactor=1.2, minNeighbors=5, minSize=(60, 60))
+
+        if len(faces) > 0:
+            x, y, fw, fh = max(faces, key=lambda f: f[2] * f[3])
+            face_cx, face_cy = x + fw / 2, y + fh / 2
+
+            dx = face_cx - cx
+            dy = face_cy - cy
+
+            if abs(dx) > DEADZONE or abs(dy) > DEADZONE:
+                pan_error = (dx / WIDTH) * HORIZONTAL_FOV
+                tilt_error = (dy / HEIGHT) * VERTICAL_FOV
+
+                pan_step = clamp(PAN_GAIN * pan_error, -PAN_MAX_STEP, PAN_MAX_STEP)
+                tilt_step = clamp(TILT_GAIN * tilt_error, -TILT_MAX_STEP, TILT_MAX_STEP)
+
+                target_pan = clamp(target_pan + PAN_DIRECTION * pan_step, -ANGLE_LIMIT, ANGLE_LIMIT)
+                target_tilt = clamp(target_tilt + TILT_DIRECTION * tilt_step, TILT_MIN, TILT_MAX)
+
+
+                #go toward target gently, then command servos to hold their position
+                pan_angle += (target_pan - pan_angle) * SMOOTHING
+                tilt_angle += (target_tilt - tilt_angle) * SMOOTHING
+                pan_pwm.change_duty_cycle(angle_to_duty(pan_angle, PAN_SERVO_MIN, PAN_SERVO_MAX))
+                tilt_pwm.change_duty_cyle(angle_to_duty(tilt_angle, TILT_SERVO_MIN, TILT_SERVO_MAX))
+
+            cv2.rectangle(frame, (x, y), (x + fw, y + fh), (0, 255, 0), 2)
+            cv2.line(frame, (int(cx), int(cy)), (int(face_cx), int(face_cy)), (0, 255, 255), 1)
+
+        #Overlays to guide 
+        if SHOW_ZONES:
+            cv2.rectangle(frame, (DETECT_MARGIN, DETECT_MARGIN), 
+                          (WIDTH - DETECT_MARGIN, HEIGHT - DETECT_MARGIN), (0, 165, 255), 1)
+            cv2.putText(frame, "detection area", (DETECT_MARGIN + 500, DETECT_MARGIN + 16), 
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 165, 255), 1)
+            cv2.rectangle(frame, (int(cx-DEADZONE), int(cy-DEADZONE)), 
+                          (int(cx + DEADZONE), int(cy + DEADZONE)), (255, 255, 0), 1)
+            cv2.putText(frame, "target zone", (int(cx-DEADZONE), int(cy-DEADZONE) - 6),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 0), 1)
+
+
+        cv2.drawMarker(frame, (int(cx), int(cy)), (255, 255, 255), cv2.MARKER_CROSS, 18, 1)
+        status = "Tracking" if len(faces) > 0 else "Searching...."
+        now = time.time()
+        fps = 0.9 * fps + 0.1 * (1.0 / max(now - last_time, 1e-3))
+        last_time = now
+        cv2.putText(frame, f"{status}     {fps:4.1f}  FPS", (10, 28), cv2.FONT_HERSHEY_SIMPLEX, 0.7, (0, 255, 0), 2)
+
+        ok, jpg = cv2.imencode(".jpg", frame, [cv2.IMWRITE_JPEG_QUALITY, 80])
+        if ok:
+            output.write(jpg.tobytes())
+
+except KeyboardInterrupt:
+    print("Ended by input")
+finally:
+    pan_pwm.change_duty_cycle(angle_to_duty(0.0, PAN_SERVO_MIN, PAN_SERVO_MAX))
+    tilt_pwm.change_duty_cycle(angle_to_duty(TILT_LEVEL, TILT_SERVO_MIN, TILT_SERVO_MAX))
+    time.sleep(0.5)
+    pan_pwm.stop()
+    tilt_pwm.stop()
+    cam.stop()
+    
+
+
+
 

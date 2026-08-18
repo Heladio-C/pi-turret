@@ -11,8 +11,8 @@ Servos are driven by RP1's hardware PWM
 
 WIRING (Changed):
 
-    Tilt servo signal has moved from pin 11(GPIO 17) to pin 35 (GPIO 19)
-    Pan servo signal has remained unchanged pin 12
+    tilt servo signal is unchanged still on pin 12 
+    pan servo signal has moved from pin 11 to pin 35 (GPIO 19)
     Servos still powered from battery pack, common ground with Pi. 
 
 Setup

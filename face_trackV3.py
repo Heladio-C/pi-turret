@@ -258,6 +258,29 @@ def main():
             if dt > 0:
                 fps = 0.9 * fps + 0.1 * (1.0 / dt)
 
+            # detections 
+            frame = cam.capture_array()
+            gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
+            #gray = grayscale image frame, reduces CPU usage on Pi
+            #scaleFactor = resizes image by 10% on each pass, lower scales like 1.05 increase accurracy
+            #slows frame rate
+            #minNeighbors = controls how strict the detector is against false positives 
+            #this setting requires at least 5 overlapping candidate boxes before declaring a region an actual face.
+            #minSize() = defines the min face size in pixels to search for, anything smaller is ignored
+            faces = face_cascade.detectMultiScale(gray, scaleFactor = 1.1, minNeighbors=5, minSize=(40,40))
+
+            status = "Searching..."
+            if len(faces) > 0:
+                status = "Tracking..."
+                x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                #find the center pixel of the face
+                face_cx, face_cy = x + w / 2, y + h / 2
+                
+                #find how many pixels the face is from the center of the screen
+                dx = face_cx - cx
+                dy = face_cy - cy
+                
+
 
     except KeyboardInterrupt:
         print("\nStopping...")

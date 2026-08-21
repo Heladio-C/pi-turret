@@ -87,8 +87,7 @@ def angle_to_duty(angle_limits):
     return 2.5 + (angle_limits / 180.0) * 10.0
 
 
-#looks for the pre-trained XML file with thousands examples of faces that will help detect faces
-face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+
 
 
 
@@ -151,9 +150,9 @@ class StreamingOutput:
         self.frame = None
         self.condition = threading.Condition() #locks the frame so it's not read while being written
 
-    def write(self, buf):
+    def write(self, buffer):
         with self.condition:
-            self.frame = buf
+            self.frame = buffer
             self.condition.notify_all() #alerts the web server that a new frame is ready
 
 
@@ -165,3 +164,66 @@ PAGE = (b"<html><head><title>Turret - face tracking </title></head>"
         b"<img src='stream.mjpg' style='display:block;width:100vw;height:100vh;object-fit:contain'/>"
         b"</body></html>")
 
+class StreamingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/":
+            body = PAGE.encode("utf-8")
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/stream.mjpg":
+            self.send_response(200)
+            self.send_header("Content-Type","multipart/x-mixed-replace; boundary=FRAME")
+            self.end_headers()
+            try:
+                while True:
+                    with output.condition:
+                        output.condition.wait()
+                        frame = output.frame
+
+                    if frame is None:
+                        continue
+
+                    self.wfile.write(b"--FRAME\r\n")
+                    self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                    self.wfile.write(("Content-Length: %d\r\n\r\n" % len(frame)).encode())
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            self.send_error(404)
+
+    def log_message(self, *args):
+        pass
+
+class StreamingServer(ThreadingMixIn, HTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+
+
+#-----------------
+#MAIN
+#------------------
+
+def main():
+
+    #start cam
+    cam = Picamera2()
+    cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}))
+    cam.start()
+    time.sleep(1)
+
+
+    #detect faces
+    #looks for the pre-trained XML file with thousands examples of faces that will help detect faces
+    face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+
+    #servos on hardware PWM
+    #Channel 3 is GPIO 19(Panning) and channel2 is GPIO18 (tilting)
+    pan_pwm = HardwarePWM(pwm_channel=3, hz=SERVO_HZ, chip=PWM_CHIP)
+    tilt_pwm = HardwarePWM(pwm_channel=2, hz = SERVO_HZ, chip = PWM_CHIP)

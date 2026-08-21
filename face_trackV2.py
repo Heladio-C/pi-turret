@@ -172,6 +172,8 @@ def serve():
     ThreadingHTTPServer(("", PORT), StreamingHandler).serve_forever()
 
 
+
+#-web server-thread
 threading.Thread(target=serve, daemon=True).start()
 print(f"Streaming server on http://turretpi.local:{PORT}")
 

@@ -87,13 +87,7 @@ def angle_to_duty(angle_limits):
     return 2.5 + (angle_limits / 180.0) * 10.0
 
 
-
-
-
-
 # NEW PID CONTROLLER
-
-
 class PID:
     def __init__(self, kp, ki, kd, output_limit):
         self.kp = kp
@@ -227,3 +221,53 @@ def main():
     #Channel 3 is GPIO 19(Panning) and channel2 is GPIO18 (tilting)
     pan_pwm = HardwarePWM(pwm_channel=3, hz=SERVO_HZ, chip=PWM_CHIP)
     tilt_pwm = HardwarePWM(pwm_channel=2, hz = SERVO_HZ, chip = PWM_CHIP)
+    pan_angle = 0.0
+    tilt_angle = TILT_LEVEL
+    pan_pwm.start(angle_to_duty(pan_angle + 90))
+    tilt_pwm.start(angle_to_duty(tilt_angle))
+
+
+    #----PID controllers
+    pan_PID = PID(PAN_KP, PAN_KI, PAN_KD, PAN_MAX_STEP)
+    tilt_PID = PID(TILT_KP, TILT_KI, TILT_KD, TILT_MAX_STEP)
+
+
+    #---web server thread----
+    server = StreamingServer(("", 8000), StreamingHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print("Streaming at http://turretpi.local:8000  (Ctrl+C to stop)")
+
+
+    #find center of screen
+    cx = WIDTH // 2
+    cy = HEIGHT // 2
+    previous_time = 0.0
+    fps = 0.0
+
+
+    try:
+        while True:
+            #stopwatch
+            now = time.monotonic()
+            if previous_time is None:
+                dt = 0.0
+            else:
+                dt = now - previous_time
+            previous_time = now
+
+            if dt > 0:
+                fps = 0.9 * fps + 0.1 * (1.0 / dt)
+
+
+    except KeyboardInterrupt:
+        print("\nStopping...")
+    finally:
+        pan_pwm.stop()
+        tilt_pwm.stop()
+        cam.stop()
+        server.shutdown()
+
+
+
+if __name__ == '__main__':
+    main()

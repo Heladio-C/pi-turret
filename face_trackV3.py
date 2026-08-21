@@ -86,5 +86,19 @@ def angle_to_duty(angle_limits):
     angle_limits = clamp(angle_limits, 0.0, 180.0)
     return 2.5 + (angle_limits / 180.0) * 10.0
 
+
+#looks for the pre-trained XML file with thousands examples of faces that will help detect faces
 face_cascade = cv2.CascadeClassifier("haarcascade_frontalface_default.xml")
+
+
+
+# NEW PID CONTROLLER
+
+
+class PID:
+    def __init__(self, kp, ki, kd, output_limit):
+        pass
+
+
+
 

@@ -144,4 +144,24 @@ class PID:
         return clamp(P + I + D, -self.output_limit, self.output_limit)
 
 
+#WEB STREAMING SETUP (OPTIONAL)
+class StreamingOutput:
+    "THREAD safe buffer that holds the most recent jpg frame"
+    def __init__(self):
+        self.frame = None
+        self.condition = threading.Condition() #locks the frame so it's not read while being written
+
+    def write(self, buf):
+        with self.condition:
+            self.frame = buf
+            self.condition.notify_all() #alerts the web server that a new frame is ready
+
+
+output = StreamingOutput()
+
+# the html webpage that has an image tag to see our video
+PAGE = (b"<html><head><title>Turret - face tracking </title></head>"
+        b"<body style='margin:0;background:#111'>"
+        b"<img src='stream.mjpg' style='display:block;width:100vw;height:100vh;object-fit:contain'/>"
+        b"</body></html>")
 

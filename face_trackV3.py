@@ -19,7 +19,6 @@ This is essentially the braking system by applying a negative force, it counters
 Using 2 PID controllers that use a measured elapsed time dt, in each frame so motion is steady
 """
 
-import os
 import time
 import threading
 
@@ -60,19 +59,22 @@ TILT_CHANNEL = 2  #GPIO 18
 
 #servo speed limits
 PAN_MAX_STEP = 6
-TILT_MAX_STEP = 7
+TILT_MAX_STEP = 6
 
 #----PID gains THESE ARE TUNABLE---
 #raise KP first, then add D, add small amount of I if slightly off center
 #for panning
+#force applied
 PAN_KP = 0.35
+#small adjustments
 PAN_KI = 0.0
+#braking system
 PAN_KD = 0.02
 
 #for tilting
-TILT_KP = 0.45
+TILT_KP = 0.35
 TILT_KI = 0.0
-TILT_KD = 0.03
+TILT_KD = 0.02
 
 #------------------------
 
@@ -144,10 +146,10 @@ class StreamingOutput:
         self.frame = None
         self.condition = threading.Condition() #locks the frame so it's not read while being written
 
-    def write(self, buffer):
+    def update(self, jpeg_bytes):
         with self.condition:
-            self.frame = buffer
-            self.condition.notify_all() #alerts the web server that a new frame is ready
+            self.frame = jpeg_bytes
+            self.condition.notify_all()
 
 
 output = StreamingOutput()
@@ -161,7 +163,7 @@ PAGE = (b"<html><head><title>Turret - face tracking </title></head>"
 class StreamingHandler(BaseHTTPRequestHandler):
     def do_GET(self):
         if self.path == "/":
-            body = PAGE.encode("utf-8")
+            body = PAGE
             self.send_response(200)
             self.send_header("Content-type", "text/html")
             self.send_header("Content-Length", len(body))
@@ -219,8 +221,8 @@ def main():
 
     #servos on hardware PWM
     #Channel 3 is GPIO 19(Panning) and channel2 is GPIO18 (tilting)
-    pan_pwm = HardwarePWM(pwm_channel=3, hz=SERVO_HZ, chip=PWM_CHIP)
-    tilt_pwm = HardwarePWM(pwm_channel=2, hz = SERVO_HZ, chip = PWM_CHIP)
+    pan_pwm = HardwarePWM(pwm_channel=PAN_CHANNEL, hz=SERVO_HZ, chip=PWM_CHIP)
+    tilt_pwm = HardwarePWM(pwm_channel=TILT_CHANNEL, hz = SERVO_HZ, chip = PWM_CHIP)
     pan_angle = 0.0
     tilt_angle = TILT_LEVEL
     pan_pwm.start(angle_to_duty(pan_angle + 90))
@@ -241,7 +243,7 @@ def main():
     #find center of screen
     cx = WIDTH // 2
     cy = HEIGHT // 2
-    previous_time = 0.0
+    previous_time = None
     fps = 0.0
 
 
@@ -274,13 +276,71 @@ def main():
                 status = "Tracking..."
                 x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
                 #find the center pixel of the face
-                face_cx, face_cy = x + w / 2, y + h / 2
+                face_cx, face_cy = x + w // 2, y + h // 2
                 
                 #find how many pixels the face is from the center of the screen
                 dx = face_cx - cx
                 dy = face_cy - cy
-                
 
+
+                #PAN axis
+                if abs(dx) <= DEADZONE:
+                    pan_PID.reset()
+
+                else:
+                    error_pan_degree = (dx / WIDTH) * HORIZONTAL_FOV
+                    pan_angle += PAN_DIRECTION * pan_PID.update(error_pan_degree, dt)
+                    pan_angle = clamp(pan_angle, -ANGLE_LIMIT, ANGLE_LIMIT)
+
+                #TILT AXIS
+                if abs(dy) <= DEADZONE:
+                    tilt_PID.reset()
+                else:
+                    error_tilt_degree = (dy / HEIGHT) * VERTICAL_FOV
+                    tilt_angle += TILT_DIRECTION * tilt_PID.update(error_tilt_degree, dt)
+                    tilt_angle = clamp(tilt_angle, TILT_MIN, TILT_MAX)
+
+
+                #command the servos
+                pan_pwm.change_duty_cycle(angle_to_duty(pan_angle + 90))
+                tilt_pwm.change_duty_cycle(angle_to_duty(tilt_angle))
+
+                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+            else:
+               # face lost hold position, clear PID history
+                pan_PID.reset()
+                tilt_PID.reset() 
+
+            # --- overlays ---
+            # orange detection-area guide box
+            cv2.rectangle(frame, (DETECT_MARGIN, DETECT_MARGIN),
+                          (WIDTH - DETECT_MARGIN, HEIGHT - DETECT_MARGIN),
+                          (0, 165, 255), 1)
+            # cyan deadzone box at center
+            cv2.rectangle(frame, (cx - DEADZONE, cy - DEADZONE),
+                          (cx + DEADZONE, cy + DEADZONE), (255, 255, 0), 1)
+            # center crosshair
+            cv2.drawMarker(frame, (cx, cy), (0, 255, 255),
+                           cv2.MARKER_CROSS, 12, 1)
+ 
+            cv2.putText(frame, "%s  %.0f FPS" % (status, fps), (8, 20),
+                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, "pan %.1f  tilt %.1f" % (pan_angle, tilt_angle),
+                        (8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            # PID term readout (very useful while tuning)
+            cv2.putText(frame, "PAN  P%+.2f I%+.2f D%+.2f" %
+                        (pan_PID.last_p, pan_PID.last_i, pan_PID.last_d),
+                        (8, HEIGHT - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                        (0, 255, 0), 1)
+            cv2.putText(frame, "TILT P%+.2f I%+.2f D%+.2f" %
+                        (tilt_PID.last_p, tilt_PID.last_i, tilt_PID.last_d),
+                        (8, HEIGHT - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
+                        (0, 255, 0), 1)
+ 
+            # --- push frame to the browser ---
+            ok, jpeg = cv2.imencode(".jpg", frame)
+            if ok:
+                output.update(jpeg.tobytes())
 
     except KeyboardInterrupt:
         print("\nStopping...")

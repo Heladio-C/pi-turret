@@ -234,7 +234,7 @@ def main():
     model = YOLO(MODEL_PATH)
 
     #warm up: the first inference is always slow , 
-    warmup = cam.catpure_array()
+    warmup = cam.capture_array()
     model(warmup, imgsz=YOLO_IMAGES, verbose=False)
 
 
@@ -294,32 +294,68 @@ def main():
             # --- YOLO: find people in this frame (replaces the Haar cascade) ---
             # frame is already BGR-ordered (the Picamera2 RGB888 quirk), which is
             # exactly what YOLO wants -- so no color conversion, no grayscale.
+            #imgsz = shrink to this size before detecting
+            #conf = drop detections if below this coinfidence
+            #classes = 0 reports only people
+            #verbose=False don't print a line to terminal every frame
+            #returns LIST (one per image): so we use results[0]
+            t0 = time.monotonic()
+            results = model(frame, imgsz=YOLO_IMAGES, conf=CONF, classes=[PERSON_CLASS], verbose=False)
+            infer_ms = (time.monotonic() - t0) * 1000.0 #detection time
 
+            boxes = results[0].boxes # every person found in frame (empty if none)
+
+
+
+            #-------OLD--------------------
             # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
             #scaleFactor = resizes image by 10% on each pass, lower scales like 1.05 increase accurracy
             #slows frame rate
             #minNeighbors = controls how strict the detector is against false positives 
             #this setting requires at least 5 overlapping candidate boxes before declaring a region an actual face.
             #minSize() = defines the min face size in pixels to search for, anything smaller is ignored
-            #
-            # 
-            # 
-            # 
             # faces = face_cascade.detectMultiScale(gray, scaleFactor = 1.1, minNeighbors=5, minSize=(40,40))
 
             status = "Searching..."
-            if len(faces) > 0:
+            if len(boxes) > 0:
                 status = "Tracking..."
-                x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
+                #--------OLD-------
+                #x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
                 #find the center pixel of the face
-                face_cx, face_cy = x + w // 2, y + h // 2
+                #face_cx, face_cy = x + w // 2, y + h // 2
+
+
+                #-------NEW---------
+                #boxes.xyxy gets bounding box coords in [x1, y1, x2, y2] format:
+                #(x1, y1): pixel coords of top left corner of the box 
+                #(x2, y2): pixel coords of bottom right coner of box
+                #.cpu() moves the tensor from GPU to cpu memory (RAM)
+                #.numpy() turns the tensor into a numpy array, make it compatible with OpenCV functions 
+                #.conf() gets the confidence score for each detected object, expressed as float from 0 to 1
+                xyxy = boxes.xyxy.cpu().numpy()
+               
+                confs = boxes.conf.cpu().numpy()
+
+                #---------------if serveral are in frame, pick biggest box----------------------
+                # here it's x2 - x1 = width, and y2 - y1  = height
+                #argamax() returns the largest value in the areas array
+                areas =(xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
+                best = int(areas.argmax())
+                x1, y1, x2, y2 = xyxy[best].astype(int)
+                conf = float(confs[best])
+
+
+                HEAD_FOCUS = 0.35 #0.0 is top of box, 0.5 is center, lower aims higher on body
+                #get center of body frame
+                body_cx = (x1 + x2) // 2
+                body_cy = (y1 + HEAD_FOCUS * (y2 - y1))
                 
-                #find how many pixels the face is from the center of the screen
-                dx = face_cx - cx
-                dy = face_cy - cy
+                #find how many pixels the body is from the center of the screen
+                dx = body_cx - cx
+                dy = body_cy - cy
 
 
-                #PAN axis
+                #PAN axis-------------------
                 if abs(dx) <= DEADZONE:
                     pan_PID.reset()
 
@@ -328,7 +364,7 @@ def main():
                     pan_angle += PAN_DIRECTION * pan_PID.update(error_pan_degree, dt)
                     pan_angle = clamp(pan_angle, -ANGLE_LIMIT, ANGLE_LIMIT)
 
-                #TILT AXIS
+                #TILT AXIS--------------------
                 if abs(dy) <= DEADZONE:
                     tilt_PID.reset()
                 else:
@@ -341,9 +377,14 @@ def main():
                 pan_pwm.change_duty_cycle(angle_to_duty(pan_angle + 90))
                 tilt_pwm.change_duty_cycle(angle_to_duty(tilt_angle))
 
-                cv2.rectangle(frame, (x, y), (x + w, y + h), (0, 255, 0), 2)
+                #draw the tracked person: green box _ confidence level
+                #2 is the thickness of the frame around person
+                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
+                #position is (x1, y1 - 6) 
+                cv2.putText(frame, "person %.2f" % conf, (x1, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
+
             else:
-               # face lost hold position, clear PID history
+               # body lost hold position, clear PID history
                 pan_PID.reset()
                 tilt_PID.reset() 
 
@@ -361,17 +402,15 @@ def main():
  
             cv2.putText(frame, "%s  %.0f FPS" % (status, fps), (8, 20),
                         cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(frame, "pan %.1f  tilt %.1f" % (pan_angle, tilt_angle),
-                        (8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            cv2.putText(frame, "pan %.1f  tilt %.1f" % (pan_angle, tilt_angle),(8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+            cv2.putText(frame, "infer %.0f ms" % infer_ms, (8, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+
+            
             # PID term readout (very useful while tuning)
-            cv2.putText(frame, "PAN  P%+.2f I%+.2f D%+.2f" %
-                        (pan_PID.last_p, pan_PID.last_i, pan_PID.last_d),
-                        (8, HEIGHT - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                        (0, 255, 0), 1)
-            cv2.putText(frame, "TILT P%+.2f I%+.2f D%+.2f" %
-                        (tilt_PID.last_p, tilt_PID.last_i, tilt_PID.last_d),
-                        (8, HEIGHT - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4,
-                        (0, 255, 0), 1)
+            cv2.putText(frame, "PAN  P%+.2f I%+.2f D%+.2f" % (pan_PID.last_p, pan_PID.last_i, pan_PID.last_d), (8, HEIGHT - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.4,(0, 255, 0), 1)
+            cv2.putText(frame, "TILT P%+.2f I%+.2f D%+.2f" % (tilt_PID.last_p, tilt_PID.last_i, tilt_PID.last_d), (8, HEIGHT - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
  
             # --- push frame to the browser ---
             ok, jpeg = cv2.imencode(".jpg", frame)

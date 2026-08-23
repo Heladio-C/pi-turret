@@ -349,6 +349,7 @@ def main():
                 #get center of body frame
                 body_cx = (x1 + x2) // 2
                 body_cy = (y1 + HEAD_FOCUS * (y2 - y1))
+                #body_cy = (y1 + y2) // 2
                 
                 #find how many pixels the body is from the center of the screen
                 dx = body_cx - cx

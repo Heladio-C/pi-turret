@@ -85,7 +85,7 @@ TILT_KD = 0.02
 MODEL_PATH = "yolov8n.pt" #using nano version smallest, fast version
 PERSON_CLASS = 0 #COCO class id for person # other notable ones: car = 2, traffic light = 9, 
 CONF = 0.5 # keeps detections only if YOLO is more than or equal to 50% sure 
-YOLO_IMAGES = 320 #YOLO shrinks the frame to this size before detecting, smaller is faster, but worse for far people
+YOLO_IMAGES = 256 #YOLO shrinks the frame to this size before detecting, smaller is faster, but worse for far people
 
 
 
@@ -224,7 +224,7 @@ def main():
 
     #start cam
     cam = Picamera2()
-    cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}))
+    cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}, buffer_size=2))
     cam.start()
     time.sleep(1)
 

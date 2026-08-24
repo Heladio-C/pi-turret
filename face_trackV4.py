@@ -224,7 +224,7 @@ def main():
 
     #start cam
     cam = Picamera2()
-    cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}, buffer_size=2))
+    cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}, buffer_count=2))
     cam.start()
     time.sleep(1)
 

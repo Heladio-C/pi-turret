@@ -293,7 +293,7 @@ class StreamingServer(ThreadingMixIn, HTTPServer):
 #MAIN
 #------------------
 
-def main():
+def main(bonus, patience, run_secs):
 
     #start cam
     cam = Picamera2()
@@ -302,7 +302,7 @@ def main():
     time.sleep(1)
 
 
-    #--------NEW VERSION-------------
+    
     #YOLO person detector, YOLO(MODEL_PATH) loads the trained network once, after it acts like a function hand it an image, get back the objects it found
     model = YOLO(MODEL_PATH)
 
@@ -343,20 +343,38 @@ def main():
     server = StreamingServer(("", 8000), StreamingHandler)
     threading.Thread(target=server.serve_forever, daemon=True).start()
     print("Streaming at http://turretpi.local:8000  (Ctrl+C to stop)")
+    print("Run config -> bonus=%.3f  patience=%d  secs=%.0f" % (bonus, patience, run_secs))
 
 
     #find center of screen
     cx = WIDTH // 2
     cy = HEIGHT // 2
+    half_diagonal = np.sqrt(WIDTH ** 2 + HEIGHT ** 2) / 2.0 #center to corner distance
     previous_time = None
     fps = 0.0
     infer_ms = 0.0
+
+
+
+    #-----NEW----- Lock and hysteresis state 
+    locked_id = None # id we are following
+    missing = 0 # frames the locked target has been off screen
+    pending_id = None # a challenger currently trying to steal lock
+    steal_counter = 0 #how many frames in a row it has out scored
+    switch_count = 0 #how many time the locked target changed
+    track_start = time.monotonic()
 
 
     try:
         while True:
             #stopwatch
             now = time.monotonic()
+
+            #timed auto stop for hands free sweeping
+            if run_secs > 0 and (now - track_start) >= run_secs:
+                break
+
+
             if previous_time is None:
                 dt = 0.0
             else:

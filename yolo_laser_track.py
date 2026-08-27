@@ -404,29 +404,67 @@ def main(bonus, patience, run_secs):
 
 
             if len(boxes) > 0 and boxes.id is not None:
-                #boxes.xyxy gives the boundaries of detected objects
-                xyxy = boxes.xyxy.cpu().numpy()
-                #boxes.conf gets the confidence scores for each object between 0 and 1 and puts in array
-                confs = boxes.conf.cpu().numpy()
-                #boxes.id gives id's to each object when using ByteTrack in YOLO
-                ids = boxes.id.cpu().numpy().astype(int)
+                
+                xyxy = boxes.xyxy.cpu().numpy() #boxes.xyxy gives the boundaries of detected objects in a array
+                
+                confs = boxes.conf.cpu().numpy() #boxes.conf gets the confidence scores for each object between 0 and 1 and puts in array
+                
+                ids = boxes.id.cpu().numpy().astype(int)   #boxes.id gives id's to each object when using ByteTrack in YOLO
+                scores = score_people(xyxy, confs, cx, cy, half_diagonal)
+
+            else:
+                
+                
+                xyxy = np.empty((0, 4))  #.empty(size of array or tuple () for many dimensions, dtype=type of data to store, order by column of rows  in memory )
+                confs = np.empty((0,))   #creates an array without initializing the entires 
+                ids = np.empty((0,), dtype=int)
+                scores = np.empty((0,))
+
+            
+            #----------------------choose who to follow with weighted score and implement stealable lock on-----------------
+
+            laser.on()
+            status = "Searching..."
+            target_idx = None
+            locked_present = (locked_id is not None) and (locked_id in ids)
+
+
+            if locked_present:
+                missing = 0
+                li = int(np.where(ids == locked_id)[0][0])  #.where(condition, [x, y] =return elements chosen from x when true, and y when false)
+                locked_eff = scores[li] + bonus #target score with a bonus
+
+            #find the best alternative person
 
             
 
 
-            laser.on()
-            status = "Searching..."
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
             if len(boxes) > 0:
                 status = "Tracking..."
 
-
-                #-------NEW---------
                 #boxes.xyxy gets bounding box coords in [x1, y1, x2, y2] format:
-                #(x1, y1): pixel coords of top left corner of the box 
-                #(x2, y2): pixel coords of bottom right coner of box
-                #.cpu() moves the tensor from GPU to cpu memory (RAM)
-                #.numpy() turns the tensor into a numpy array, make it compatible with OpenCV functions 
-                #.conf() gets the confidence score for each detected object, expressed as float from 0 to 1
                 xyxy = boxes.xyxy.cpu().numpy()
                
                 confs = boxes.conf.cpu().numpy()
@@ -516,6 +554,7 @@ def main(bonus, patience, run_secs):
     except KeyboardInterrupt:
         print("\nStopping...")
     finally:
+        laser.off()
         pan_pwm.stop()
         tilt_pwm.stop()
         cam.stop()

@@ -403,30 +403,21 @@ def main(bonus, patience, run_secs):
             boxes = results[0].boxes # every person found in frame (empty if none)
 
 
-
-            #-------OLD--------------------
-            # gray = cv2.cvtColor(frame, cv2.COLOR_BGR2GRAY)
-            #scaleFactor = resizes image by 10% on each pass, lower scales like 1.05 increase accurracy
-            #slows frame rate
-            #minNeighbors = controls how strict the detector is against false positives 
-            #this setting requires at least 5 overlapping candidate boxes before declaring a region an actual face.
-            #minSize() = defines the min face size in pixels to search for, anything smaller is ignored
-            # faces = face_cascade.detectMultiScale(gray, scaleFactor = 1.1, minNeighbors=5, minSize=(40,40))
-            
-            
+            if len(boxes) > 0 and boxes.id is not None:
+                #boxes.xyxy gives the boundaries of detected objects
+                xyxy = boxes.xyxy.cpu().numpy()
+                #boxes.conf gets the confidence scores for each object between 0 and 1 and puts in array
+                confs = boxes.conf.cpu().numpy()
+                #boxes.id gives id's to each object when using ByteTrack in YOLO
+                ids = boxes.id.cpu().numpy().astype(int)
 
             
+
+
             laser.on()
-
-
-            
             status = "Searching..."
             if len(boxes) > 0:
                 status = "Tracking..."
-                #--------OLD-------
-                #x, y, w, h = max(faces, key=lambda f: f[2] * f[3])
-                #find the center pixel of the face
-                #face_cx, face_cy = x + w // 2, y + h // 2
 
 
                 #-------NEW---------
@@ -529,7 +520,6 @@ def main(bonus, patience, run_secs):
         tilt_pwm.stop()
         cam.stop()
         server.shutdown()
-
 
 
 if __name__ == '__main__':

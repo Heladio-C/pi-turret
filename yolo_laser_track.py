@@ -470,7 +470,7 @@ def main(bonus, patience, run_secs):
                     steal_counter = 0
                     target_idx = li
                     status = "Tracking id %d" % locked_id
-
+            #senario where target is gone
             else:
                 if locked_id is not None:
                     missing += 1
@@ -478,94 +478,65 @@ def main(bonus, patience, run_secs):
                     if (locked_id is None) or (missing >= LOST_GRACE_FRAMES):
                         if len(ids) > 0:
                             new_idx = int(scores.argmax())
+                            new_id = int(ids[new_idx])
+                            if (locked_id is not None) and (new_id != locked_id): #find a new person
+                                switch_count += 1
+                            locked_id = new_id
+                            missing = 0
+                            pending_id = None
+                            steal_counter = 0
+                            target_idx = new_idx
+                            status = "Tracking id %d" % locked_id
+                        else:
+                            locked_id = None #no one is around
+                            missing = 0
+                            pending_id = None
+                            steal_counter = 0
+                            status = "Searching..."
+                    else:
+                        status = "Reaquiring id %d" % locked_id
 
 
+                #--------Act on the target------- same logic as before 
+                if target_idx is not None:
+                    x1, y1, x2, y2 = xyxy[target_idx].astype(int)
 
-            
+                    HEAD_FOCUS = 0.35 #0.0 is top of box, 0.5 is center, lower aims higher on body
+                    #get center of body frame
+                    body_cx = (x1 + x2) // 2
+                    body_cy = (y1 + HEAD_FOCUS * (y2 - y1))
+                    #body_cy = (y1 + y2) // 2
+                    
+                    #find how many pixels the body is from the center of the screen
+                    dx = body_cx - cx
+                    dy = body_cy - cy
+    
+    
+                    #PAN axis-------------------
+                    if abs(dx) <= DEADZONE:
+                        pan_PID.reset()
+    
+                    else:
+                        error_pan_degree = (dx / WIDTH) * HORIZONTAL_FOV
+                        pan_angle += PAN_DIRECTION * pan_PID.update(error_pan_degree, dt)
+                        pan_angle = clamp(pan_angle, -ANGLE_LIMIT, ANGLE_LIMIT)
 
+                    #TILT AXIS--------------------
+                    if abs(dy) <= DEADZONE:
+                        tilt_PID.reset()
+                    else:
+                        error_tilt_degree = (dy / HEIGHT) * VERTICAL_FOV
+                        tilt_angle += TILT_DIRECTION * tilt_PID.update(error_tilt_degree, dt)
+                        tilt_angle = clamp(tilt_angle, TILT_MIN, TILT_MAX)
+    
+                    #command the servos
+                    pan_pwm.change_duty_cycle(angle_to_duty(pan_angle + 90))
+                    tilt_pwm.change_duty_cycle(angle_to_duty(tilt_angle))
 
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-
-            if len(boxes) > 0:
-                status = "Tracking..."
-
-                #boxes.xyxy gets bounding box coords in [x1, y1, x2, y2] format:
-                xyxy = boxes.xyxy.cpu().numpy()
-               
-                confs = boxes.conf.cpu().numpy()
-
-                #---------------if serveral are in frame, pick biggest box----------------------
-                # here it's x2 - x1 = width, and y2 - y1  = height
-                #argamax() returns the largest value in the areas array
-                areas =(xyxy[:, 2] - xyxy[:, 0]) * (xyxy[:, 3] - xyxy[:, 1])
-                best = int(areas.argmax())
-                x1, y1, x2, y2 = xyxy[best].astype(int)
-                conf = float(confs[best])
-
-
-                HEAD_FOCUS = 0.35 #0.0 is top of box, 0.5 is center, lower aims higher on body
-                #get center of body frame
-                body_cx = (x1 + x2) // 2
-                body_cy = (y1 + HEAD_FOCUS * (y2 - y1))
-                #body_cy = (y1 + y2) // 2
-                
-                #find how many pixels the body is from the center of the screen
-                dx = body_cx - cx
-                dy = body_cy - cy
-
-
-                #PAN axis-------------------
-                if abs(dx) <= DEADZONE:
+                else:
                     pan_PID.reset()
-
-                else:
-                    error_pan_degree = (dx / WIDTH) * HORIZONTAL_FOV
-                    pan_angle += PAN_DIRECTION * pan_PID.update(error_pan_degree, dt)
-                    pan_angle = clamp(pan_angle, -ANGLE_LIMIT, ANGLE_LIMIT)
-
-                #TILT AXIS--------------------
-                if abs(dy) <= DEADZONE:
                     tilt_PID.reset()
-                else:
-                    error_tilt_degree = (dy / HEIGHT) * VERTICAL_FOV
-                    tilt_angle += TILT_DIRECTION * tilt_PID.update(error_tilt_degree, dt)
-                    tilt_angle = clamp(tilt_angle, TILT_MIN, TILT_MAX)
-
-
-                #command the servos
-                pan_pwm.change_duty_cycle(angle_to_duty(pan_angle + 90))
-                tilt_pwm.change_duty_cycle(angle_to_duty(tilt_angle))
-
-                #draw the tracked person: green box _ confidence level
-                #2 is the thickness of the frame around person
-                cv2.rectangle(frame, (x1, y1), (x2, y2), (0, 255, 0), 2)
-                #position is (x1, y1 - 6) 
-                cv2.putText(frame, "person %.2f" % conf, (x1, y1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (0, 255, 0), 1)
-
-            else:
-               # body lost hold position, clear PID history
-                pan_PID.reset()
-                tilt_PID.reset() 
+    
 
             # --- overlays ---
             # orange detection-area guide box

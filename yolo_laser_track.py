@@ -540,21 +540,22 @@ def main(bonus, patience, run_secs):
 
             # --- overlays ---
             # orange detection-area guide box
-            cv2.rectangle(frame, (DETECT_MARGIN, DETECT_MARGIN),
-                          (WIDTH - DETECT_MARGIN, HEIGHT - DETECT_MARGIN),
-                          (0, 165, 255), 1)
+            cv2.rectangle(frame, (DETECT_MARGIN, DETECT_MARGIN),(WIDTH - DETECT_MARGIN, HEIGHT - DETECT_MARGIN), (0, 165, 255), 1)
             # cyan deadzone box at center
-            cv2.rectangle(frame, (cx - DEADZONE, cy - DEADZONE),
-                          (cx + DEADZONE, cy + DEADZONE), (255, 255, 0), 1)
+            cv2.rectangle(frame, (cx - DEADZONE, cy - DEADZONE), (cx + DEADZONE, cy + DEADZONE), (255, 255, 0), 1)
             # center crosshair
-            cv2.drawMarker(frame, (cx, cy), (0, 255, 255),
-                           cv2.MARKER_CROSS, 12, 1)
- 
-            cv2.putText(frame, "%s  %.0f FPS" % (status, fps), (8, 20),
-                        cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
-            cv2.putText(frame, "pan %.1f  tilt %.1f" % (pan_angle, tilt_angle),(8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            cv2.drawMarker(frame, (cx, cy), (0, 255, 255), cv2.MARKER_CROSS, 12, 1)
 
+            #text
+            cv2.putText(frame, "%s  %.0f FPS" % (status, fps), (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, "pan %.1f  tilt %.1f" % (pan_angle, tilt_angle),(8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
             cv2.putText(frame, "infer %.0f ms" % infer_ms, (8, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+            #NEW OVERLAYS
+            elapsed_min = max((now - track_start) / 60.0, 1e-6)
+            spm = switch_count / elapsed_min
+            cv2.putText(frame, "switches %d (%.1f/min)  people %d" % (switch_count, spm, len(ids)), (8, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            cv2.putText(frame, "bonus %.2f  patience %d" % (bonus, patience), (8, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
 
             
@@ -575,6 +576,20 @@ def main(bonus, patience, run_secs):
         tilt_pwm.stop()
         cam.stop()
         server.shutdown()
+
+        #log one sweep row
+        runtime = time.monotonic() - track_start
+        spm = switch_count / max(runtime / 60.0, 1e-6)
+        row = "%.3f, %d, %d, %.1f, %.2f" % (bonus, patience, switch_count, runtime, spm)
+        print("\nSweep row (bonues, patience, switches, runtime_s, switches_per_min):")
+        print(row)
+        new_file = not os.path.exists("sweep.csv")
+        with open("sweep.csv", "a") as f:
+            if new_file:
+                f.write("bonus,patience,switches,runtime_s,switches_per_min\n")
+            f.write(row + "\n")
+        print("Added to sweep.csv")
+
 
 
 if __name__ == '__main__':

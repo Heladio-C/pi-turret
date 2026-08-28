@@ -434,7 +434,52 @@ def main(bonus, patience, run_secs):
                 li = int(np.where(ids == locked_id)[0][0])  #.where(condition, [x, y] =return elements chosen from x when true, and y when false)
                 locked_eff = scores[li] + bonus #target score with a bonus
 
-            #find the best alternative person
+                #find the best alternative person
+
+                if len(ids) > 1:
+                    masked = scores.copy()
+                    masked[1] = -np.inf
+                    ci = int(masked.argmax())
+                    challenger_won = masked[ci] > locked_eff
+
+                else:
+                    ci = None
+                    challenger_won = False
+
+                if challenger_won:
+                    cand_id = int(ids[ci])
+                    if cand_id == pending_id:
+                        steal_counter += 1
+                    else:
+                        pending_id = cand_id
+                        steal_counter = 1
+
+                    if steal_counter >= patience: #stealing has occurred
+                        switch_count += 1
+                        locked_id = cand_id
+                        target_idx = ci
+                        pending_id = None
+                        steal_counter = 0
+                        status = "Tracking id %d" % locked_id
+                    else:
+                        target_idx = li #hold current target for now
+                        status = "Locked id %d (challenged by %d %d/%d)" % (locked_id, cand_id, steal_counter, patience)
+
+                else:
+                    pending_id = None
+                    steal_counter = 0
+                    target_idx = li
+                    status = "Tracking id %d" % locked_id
+
+            else:
+                if locked_id is not None:
+                    missing += 1
+
+                    if (locked_id is None) or (missing >= LOST_GRACE_FRAMES):
+                        if len(ids) > 0:
+                            new_idx = int(scores.argmax())
+
+
 
             
 

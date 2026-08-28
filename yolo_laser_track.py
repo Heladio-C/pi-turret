@@ -593,4 +593,9 @@ def main(bonus, patience, run_secs):
 
 
 if __name__ == '__main__':
-    main()
+    ap = argparse.ArgumentParser(description="M6 turret tracker")
+    ap.add_argument("--bonus", type=float, default=CURRENT_TARGET_BONUS, help="current-target stickiness bonus (the sweep knob)")
+    ap.add_argument("--patience", type=int, default=STEAL_PATIENCE, help="frames a challenger must win before stealing the lock")
+    ap.add_argument("--secs", type=float, default=0.0, help="auto-stop after N seconds (0 to run until Ctrl + C)")
+    args = ap.parse_args()
+    main(args.bonus, args.patience, args.secs)

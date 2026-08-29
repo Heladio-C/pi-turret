@@ -546,7 +546,16 @@ def main(bonus, patience, run_secs):
                 if i == target_idx:
                     color, thick = (0, 255, 0), 2
                     label = "id %d LOCK s%.2f" % (ids[i], scores[i])
+
+                elif pending_id is not None and ids[i] == pending_id:
+                    color, thick = (0, 255, 255), 2
+                    label = "id %d CHAL %d/%d s%.2f" % (ids[i], steal_counter, patience, scores[i])
+
+                else:
+                    color, thick = (160, 160, 160), 1
+                    label = "id %d s%.2f" % (ids[i], scores[i])
                     
+
 
 
 

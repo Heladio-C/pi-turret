@@ -536,6 +536,25 @@ def main(bonus, patience, run_secs):
                 else:
                     pan_PID.reset()
                     tilt_PID.reset()
+
+
+            #-----------NEW draw everyone in frame: green = locked, yellow = challenger, grey = ignored
+
+            for i in range(len(ids)):
+                bx1, by1, bx2, by2 = xyxy[i].astype(int)
+
+                if i == target_idx:
+                    color, thick = (0, 255, 0), 2
+                    label = "id %d LOCK s%.2f" % (ids[i], scores[i])
+                    
+
+
+
+
+
+
+
+
     
 
             # --- overlays ---

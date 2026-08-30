@@ -329,7 +329,8 @@ def main(bonus, patience, run_secs):
     missing = 0 # frames the locked target has been off screen
     pending_id = None # a challenger currently trying to steal lock
     steal_counter = 0 #how many frames in a row it has out scored
-    switch_count = 0 #how many time the locked target changed
+    steal_count = 0     #challenger out-scored the locked target and took over (bonus-gated -- the thing the sweep measures)
+    reacquire_count = 0 #locked target was lost, then a DIFFERENT person was grabbed (noise / limitation number)
     track_start = time.monotonic()
 
 
@@ -415,7 +416,7 @@ def main(bonus, patience, run_secs):
                         steal_counter = 1
 
                     if steal_counter >= patience: #stealing has occurred
-                        switch_count += 1
+                        steal_count += 1
                         locked_id = cand_id
                         target_idx = ci
                         pending_id = None
@@ -441,7 +442,7 @@ def main(bonus, patience, run_secs):
                         new_idx = int(scores.argmax())
                         new_id = int(ids[new_idx])
                         if (locked_id is not None) and (new_id != locked_id): #find a new person
-                            switch_count += 1
+                            reacquire_count += 1
                         locked_id = new_id
                         missing = 0
                         pending_id = None
@@ -541,8 +542,9 @@ def main(bonus, patience, run_secs):
 
             #NEW OVERLAYS
             elapsed_min = max((now - track_start) / 60.0, 1e-6)
-            spm = switch_count / elapsed_min
-            cv2.putText(frame, "switches %d (%.1f/min)  people %d" % (switch_count, spm, len(ids)), (8, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            steal_pm = steal_count / elapsed_min
+            reacq_pm = reacquire_count / elapsed_min
+            cv2.putText(frame, "steals %d (%.1f/min)  reacq %d (%.1f/min)  people %d" % (steal_count, steal_pm, reacquire_count, reacq_pm, len(ids)), (8, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
             cv2.putText(frame, "bonus %.2f  patience %d" % (bonus, patience), (8, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
 
 
@@ -566,14 +568,16 @@ def main(bonus, patience, run_secs):
 
         #log one sweep row
         runtime = time.monotonic() - track_start
-        spm = switch_count / max(runtime / 60.0, 1e-6)
-        row = "%.3f,%d,%d,%.1f,%.2f" % (bonus, patience, switch_count, runtime, spm)
-        print("\nSweep row (bonus, patience, switches, runtime_s, switches_per_min):")
+        mins = max(runtime / 60.0, 1e-6)
+        steal_pm = steal_count / mins
+        reacq_pm = reacquire_count / mins
+        row = "%.3f,%d,%d,%d,%.1f,%.2f,%.2f" % (bonus, patience, steal_count, reacquire_count, runtime, steal_pm, reacq_pm)
+        print("\nSweep row (bonus,patience,steals,reacquires,runtime_s,steals_per_min,reacq_per_min):")
         print(row)
         new_file = not os.path.exists("sweep.csv")
         with open("sweep.csv", "a") as f:
             if new_file:
-                f.write("bonus,patience,switches,runtime_s,switches_per_min\n")
+                f.write("bonus,patience,steals,reacquires,runtime_s,steals_per_min,reacq_per_min\n")
             f.write(row + "\n")
         print("Added to sweep.csv")
 

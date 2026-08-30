@@ -457,6 +457,13 @@ def main(bonus, patience, run_secs):
                         status = "Searching..."
                 else:
                     status = "Reacquiring id %d" % locked_id
+                    # highlight the provisional next target during the grace window
+                    if len(ids) > 0:
+                        cand_idx = int(scores.argmax())
+                        pending_id = int(ids[cand_idx])
+                        steal_counter = 0   # grace candidate is NOT a steal challenger; keep counts clean
+                    else:
+                        pending_id = None
 
 
             #--------Act on the target------- same logic as before
@@ -518,7 +525,12 @@ def main(bonus, patience, run_secs):
 
                 elif pending_id is not None and ids[i] == pending_id:
                     color, thick = (0, 255, 255), 2
-                    label = "id %d CHAL %d/%d s%.2f" % (ids[i], steal_counter, patience, scores[i])
+                    if locked_present:
+                        # a steal is building: our target is still here and this one is out-scoring it
+                        label = "id %d CHAL %d/%d s%.2f" % (ids[i], steal_counter, patience, scores[i])
+                    else:
+                        # grace countdown: our target is gone, this is who we'll grab if it stays gone
+                        label = "id %d ACQ %d/%d s%.2f" % (ids[i], missing, LOST_GRACE_FRAMES, scores[i])
 
                 else:
                     color, thick = (160, 160, 160), 1

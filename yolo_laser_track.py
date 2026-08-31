@@ -299,7 +299,7 @@ def main(bonus, patience, run_secs):
 
     #----LASERS!!!!
     laser = LED(17)
-    laser.off()
+    laser.on()
 
 
     #----PID controllers
@@ -501,18 +501,11 @@ def main(bonus, patience, run_secs):
                 #command the servos
                 pan_pwm.change_duty_cycle(angle_to_duty(pan_angle + 90))
                 tilt_pwm.change_duty_cycle(angle_to_duty(tilt_angle))
-
-                #LASER: fire only when the locked target is centered in the deadzone
-                if abs(dx) <= DEADZONE and abs(dy) <= DEADZONE:
-                    laser.on()
-                else:
-                    laser.off()
-
             else:
                 #no active target (searching, or holding through a short dropout)
                 pan_PID.reset()
                 tilt_PID.reset()
-                laser.off()
+                
 
 
             #-----------NEW draw everyone in frame: green = locked, yellow = challenger, grey = ignored

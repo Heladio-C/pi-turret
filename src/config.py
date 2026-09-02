@@ -26,6 +26,7 @@ SERVO_HZ = 50
 PAN_CHANNEL = 3        # GPIO 19
 TILT_CHANNEL = 2       # GPIO 18
 LASER_PIN = 17         # GPIO 17 (on/off via transistor)
+LASER_ON = True
 
 # --- servo speed caps (per-frame move limit; also the PID output limit) ---
 PAN_MAX_STEP = 6

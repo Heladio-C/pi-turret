@@ -18,7 +18,7 @@ from config import (
     PAN_DIRECTION, TILT_DIRECTION, DEADZONE,
     WIDTH, HEIGHT, HORIZONTAL_FOV, VERTICAL_FOV,
     PAN_KP, PAN_KI, PAN_KD, PAN_MAX_STEP,
-    TILT_KP, TILT_KI, TILT_KD, TILT_MAX_STEP,
+    TILT_KP, TILT_KI, TILT_KD, TILT_MAX_STEP, LASER_ON
 )
 
 
@@ -39,7 +39,11 @@ class Turret:
         self.tilt_pwm.start(angle_to_duty(self.tilt_angle))
 
         self.laser = LED(LASER_PIN)
-        self.laser.off()
+
+        if LASER_ON:
+            self.laser.on()
+        else:
+            self.laser.off()
 
         self.pan_pid = PID(PAN_KP, PAN_KI, PAN_KD, PAN_MAX_STEP)
         self.tilt_pid = PID(TILT_KP, TILT_KI, TILT_KD, TILT_MAX_STEP)
@@ -67,17 +71,20 @@ class Turret:
         self.tilt_pwm.change_duty_cycle(angle_to_duty(self.tilt_angle))
 
         centered = (abs(dx) <= DEADZONE) and (abs(dy) <= DEADZONE)
-        if centered:
-            self.laser.on()
-        else:
-            self.laser.off()
+
+        if not LASER_ON:
+            if centered:
+                self.laser.on()
+            else:
+                self.laser.off()
         return centered
 
     def hold(self):
         """No target: freeze servos where they are, clear PID history, laser off."""
         self.pan_pid.reset()
         self.tilt_pid.reset()
-        self.laser.off()
+        if not LASER_ON:
+            self.laser.off()
 
     def stop(self):
         self.laser.off()

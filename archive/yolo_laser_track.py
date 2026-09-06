@@ -1,0 +1,597 @@
+#!/usr/bin/env python3
+"""
+Pan-Tilt Laser Turret: Phase 6 Multi object tracking with priority rules
+weighted score + stealable lock, sweep instrumented
+
+How the decision on who to track works?
+
+1. ByteTrack give every person a id (model.track(persist=True))
+
+2. Each person gets a weighted Score in each frame:
+   score = W_SIZE * size + W_CENTER * centeredness + W_CONF * confidence
+   each term is scaled to roughly 0 to 1 so weights are comparable
+
+3. The person currently tracked is given a bonus added to their score (stickiness).
+   A challenger has to out-score us by more than the bonus, AND keep doing it for
+   STEAL_PATIENCE frames in a row, before it can steal the lock. This is hysteresis.
+
+4. If the target is out of frame, we hold for a short time then pick a new person
+
+Sweep instrumentation (ML):
+--bonus B    set the stickiness knob for this run (overrides CURRENT_TARGET_BONUS)
+--patience P set the steal patience for this run
+--secs S     stop after S seconds (0 = run until Ctrl + C)
+
+after 1 run it prints 1 row to sweep.csv
+"""
+import os
+import time
+import threading
+import argparse #accepts arguments given in terminal
+
+import cv2
+from ultralytics import YOLO # new YOLOv8 detector
+import numpy as np #allows for calculating box areas,
+
+from picamera2 import Picamera2
+from rpi_hardware_pwm import HardwarePWM
+from gpiozero import LED
+
+
+from http.server import BaseHTTPRequestHandler, HTTPServer
+#allows to stream serve multiple connections w/o neither jamming the server
+from socketserver import ThreadingMixIn
+
+WIDTH = 640
+HEIGHT = 360
+HORIZONTAL_FOV = 66.0
+VERTICAL_FOV = 38.0
+
+DEADZONE = 20 #20 pixel radius where tracking is void
+
+DETECT_MARGIN = 10 # for visuals for on screen detection area guide box
+
+#servo limits
+ANGLE_LIMIT = 90.0 #left and right
+TILT_MIN = 30 # looking up
+TILT_MAX = 180.0 #looking down
+TILT_LEVEL = 130.0 #resting position
+
+PAN_DIRECTION = -1
+TILT_DIRECTION = 1
+
+
+#HARDWARE PWM (RP1 controller = chip 0 on this Pi)
+PWM_CHIP = 0
+SERVO_HZ = 50
+PAN_CHANNEL = 3  # GPIO 19
+TILT_CHANNEL = 2  #GPIO 18
+
+
+
+#servo speed limits
+PAN_MAX_STEP = 6
+TILT_MAX_STEP = 6
+
+#----PID gains THESE ARE TUNABLE---
+#raise KP first, then add D, add small amount of I if slightly off center
+#for panning
+#force applied
+PAN_KP = 0.35
+#small adjustments
+PAN_KI = 0.0
+#braking system
+PAN_KD = 0.02
+
+#for tilting
+TILT_KP = 0.35
+TILT_KI = 0.0
+TILT_KD = 0.02
+
+
+
+#YOLO DETECTOR (Tunable)
+MODEL_PATH = "yolov8n.pt" #using nano version smallest, fast version
+PERSON_CLASS = 0 #COCO class id for person # other notable ones: car = 2, traffic light = 9,
+CONF = 0.5 # keeps detections only if YOLO is more than or equal to 50% sure
+YOLO_IMAGES = 256 #YOLO shrinks the frame to this size before detecting, smaller is faster, but worse for far people
+
+#--------------New multi-object tracking + priority (Tunable)
+#weighted scores: how much each factor matters when ranking people
+W_SIZE = 1.0 # bigger box is more important
+W_CENTER = 0.5 #closer to the middle of the frame is more imoportant
+W_CONF = 0.3 #more confident than 30% is more important
+
+#-----stealable priority
+CURRENT_TARGET_BONUS = 0.2 #0 = flickery, high = never lets go
+
+STEAL_PATIENCE = 3 #other target must outscore current person this many frames in a row before it becomes priority
+
+LOST_GRACE_FRAMES = 8 # keep the lock this many frames while the target is off screen, before switching
+
+
+#------------------------
+
+def clamp(value, low, high):
+    return max(low, min(high, value))
+
+
+#converts a wanted angle into a PWM percentage
+#standard servos expect a pulse width of 0.5ms (0 deg) to 2.5ms (180 deg) every 20ms.
+def angle_to_duty(angle_limits):
+    angle_limits = clamp(angle_limits, 0.0, 180.0)
+    return 2.5 + (angle_limits / 180.0) * 10.0
+
+
+
+
+#-------NEW weighted score format
+# give every detected person a score, return an array of the scores aligned with the boxes, bigger = more worth following
+
+def score_people(xyxy, confs, cx, cy, half_diagonal):
+    x1, y1, x2, y2 = xyxy[:, 0], xyxy[:, 1], xyxy[:, 2], xyxy[:, 3]
+
+    #size = box area as fraction of frame
+    size_term = ((x2 - x1) * (y2 - y1)) / float(WIDTH * HEIGHT)
+
+
+    #centeredness: 1.0 = dead center, 0.0 is far corner
+    box_cx  = (x1 + x2) / 2.0
+    box_cy = (y1 + y2) / 2.0
+    #.sqrt() calculates the sqrt of every element in array
+    distance = np.sqrt((box_cx - cx) ** 2 + (box_cy - cy) ** 2)
+    #.clip(input array, minumum, maxminum, optional = array to store the results)
+    # used to limit the values in a array with a min and max threshold, an value smaller than min is replaced by the min, values in range are unchanged
+
+    center_term = np.clip(1.0 - distance / half_diagonal, 0.0, 1.0)
+
+    #confidence is same
+    conf_term = confs
+
+    return W_SIZE * size_term + W_CENTER * center_term + W_CONF * conf_term
+
+
+# PID CONTROLLER
+class PID:
+    def __init__(self, kp, ki, kd, output_limit):
+        self.kp = kp
+        self.ki = ki
+        self.kd = kd
+        self.output_limit = output_limit
+        self.integral = 0.0
+        self.previous_error = 0.0
+        self.first = True
+        self.last_p = self.last_i = self.last_d = 0.0
+
+    def reset(self):
+        self.integral = 0.0
+        self.previous_error = 0.0
+        self.first = True
+        self.last_p = self.last_i = self.last_d = 0.0
+
+
+    #error is distance in pixels is face from center
+    #dt is time elapsed
+    def update(self, error, dt):
+
+        #Proportional
+        P = self.kp * error
+
+        if self.first or dt <= 0:
+            # No previous samples so skip I and D this frame
+            derivative = 0.0
+            self.first = False
+        else:
+            #integral: add leftover error over time
+            self.integral += error * dt
+            if self.ki > 0:
+                windup_limit = self.output_limit / self.ki
+                self.integral = clamp(self.integral, -windup_limit, windup_limit)
+
+            derivative = (error - self.previous_error) / dt
+
+        I = self.ki * self.integral
+        D = self.kd * derivative
+
+        self.previous_error = error
+        self.last_p = P
+        self.last_i = I
+        self.last_d = D
+
+        return clamp(P + I + D, -self.output_limit, self.output_limit)
+
+
+#WEB STREAMING SETUP (OPTIONAL)
+class StreamingOutput:
+    "THREAD safe buffer that holds the most recent jpg frame"
+    def __init__(self):
+        self.frame = None
+        self.condition = threading.Condition() #locks the frame so it's not read while being written
+
+    def update(self, jpeg_bytes):
+        with self.condition:
+            self.frame = jpeg_bytes
+            self.condition.notify_all()
+
+
+output = StreamingOutput()
+
+# the html webpage that has an image tag to see our video
+PAGE = (b"<html><head><title>Turret - tracking </title></head>"
+        b"<body style='margin:0;background:#111'>"
+        b"<img src='stream.mjpg' style='display:block;width:100vw;height:100vh;object-fit:contain'/>"
+        b"</body></html>")
+
+class StreamingHandler(BaseHTTPRequestHandler):
+    def do_GET(self):
+        if self.path == "/":
+            body = PAGE
+            self.send_response(200)
+            self.send_header("Content-type", "text/html")
+            self.send_header("Content-Length", len(body))
+            self.end_headers()
+            self.wfile.write(body)
+        elif self.path == "/stream.mjpg":
+            self.send_response(200)
+            self.send_header("Content-Type","multipart/x-mixed-replace; boundary=FRAME")
+            self.end_headers()
+            try:
+                while True:
+                    with output.condition:
+                        output.condition.wait()
+                        frame = output.frame
+
+                    if frame is None:
+                        continue
+
+                    self.wfile.write(b"--FRAME\r\n")
+                    self.wfile.write(b"Content-Type: image/jpeg\r\n")
+                    self.wfile.write(("Content-Length: %d\r\n\r\n" % len(frame)).encode())
+                    self.wfile.write(frame)
+                    self.wfile.write(b"\r\n")
+            except (BrokenPipeError, ConnectionResetError):
+                pass
+        else:
+            self.send_error(404)
+
+    def log_message(self, *args):
+        pass
+
+class StreamingServer(ThreadingMixIn, HTTPServer):
+    allow_reuse_address = True
+    daemon_threads = True
+
+
+
+
+#-----------------
+#MAIN
+#------------------
+
+def main(bonus, patience, run_secs):
+
+    #start cam
+    cam = Picamera2()
+    cam.configure(cam.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"}, buffer_count=2))
+    cam.start()
+    time.sleep(1)
+
+
+    #YOLO person detector, YOLO(MODEL_PATH) loads the trained network once, then model.track()
+    #both detects people AND keeps a stable id on each across frames
+    model = YOLO(MODEL_PATH)
+
+    #warm up: the first inference is always slow (plain call is fine, it just warms the weights)
+    warmup = cam.capture_array()
+    model(warmup, imgsz=YOLO_IMAGES, verbose=False)
+
+
+    #servos on hardware PWM
+    #Channel 3 is GPIO 19(Panning) and channel2 is GPIO18 (tilting)
+    pan_pwm = HardwarePWM(pwm_channel=PAN_CHANNEL, hz=SERVO_HZ, chip=PWM_CHIP)
+    tilt_pwm = HardwarePWM(pwm_channel=TILT_CHANNEL, hz = SERVO_HZ, chip = PWM_CHIP)
+    pan_angle = 0.0
+    tilt_angle = TILT_LEVEL
+    pan_pwm.start(angle_to_duty(pan_angle + 90))
+    tilt_pwm.start(angle_to_duty(tilt_angle))
+
+
+
+    #----LASERS!!!!
+    laser = LED(17)
+    laser.on()
+
+
+    #----PID controllers
+    pan_PID = PID(PAN_KP, PAN_KI, PAN_KD, PAN_MAX_STEP)
+    tilt_PID = PID(TILT_KP, TILT_KI, TILT_KD, TILT_MAX_STEP)
+
+
+    #---web server thread----
+    server = StreamingServer(("", 8000), StreamingHandler)
+    threading.Thread(target=server.serve_forever, daemon=True).start()
+    print("Streaming at http://turretpi.local:8000  (Ctrl+C to stop)")
+    print("Run config -> bonus=%.3f  patience=%d  secs=%.0f" % (bonus, patience, run_secs))
+
+
+    #find center of screen
+    cx = WIDTH // 2
+    cy = HEIGHT // 2
+    half_diagonal = np.sqrt(WIDTH ** 2 + HEIGHT ** 2) / 2.0 #center to corner distance
+    previous_time = None
+    fps = 0.0
+    infer_ms = 0.0
+
+
+
+    #-----NEW----- Lock and hysteresis state
+    locked_id = None # id we are following
+    missing = 0 # frames the locked target has been off screen
+    pending_id = None # a challenger currently trying to steal lock
+    steal_counter = 0 #how many frames in a row it has out scored
+    steal_count = 0     #challenger out-scored the locked target and took over (bonus-gated -- the thing the sweep measures)
+    reacquire_count = 0 #locked target was lost, then a DIFFERENT person was grabbed (noise / limitation number)
+    track_start = time.monotonic()
+
+
+    try:
+        while True:
+            #stopwatch
+            now = time.monotonic()
+
+            #timed auto stop for hands free sweeping
+            if run_secs > 0 and (now - track_start) >= run_secs:
+                break
+
+
+            if previous_time is None:
+                dt = 0.0
+            else:
+                dt = now - previous_time
+            previous_time = now
+
+            if dt > 0:
+                fps = 0.9 * fps + 0.1 * (1.0 / dt)
+
+            # detections
+            frame = cam.capture_array()
+
+
+            # --- YOLO + ByteTrack: detect people AND stamp a stable id on each ---
+            # persist=True tells the tracker to remember ids between calls (essential in a loop).
+            # frame is already BGR-ordered (Picamera2 RGB888 quirk) -- no color conversion.
+            t0 = time.monotonic()
+            results = model.track(frame, imgsz=YOLO_IMAGES, conf=CONF,
+                                  classes=[PERSON_CLASS], persist=True, verbose=False)
+            infer_ms = (time.monotonic() - t0) * 1000.0 #detection time
+
+            boxes = results[0].boxes # every person found in frame (empty if none)
+
+
+            if len(boxes) > 0 and boxes.id is not None:
+
+                xyxy = boxes.xyxy.cpu().numpy() #boxes.xyxy gives the boundaries of detected objects in a array
+
+                confs = boxes.conf.cpu().numpy() #boxes.conf gets the confidence scores for each object between 0 and 1
+
+                ids = boxes.id.cpu().numpy().astype(int)   #boxes.id gives id's to each object when using ByteTrack
+                scores = score_people(xyxy, confs, cx, cy, half_diagonal)
+
+            else:
+
+                xyxy = np.empty((0, 4))  #.empty(size of array, dtype, order)
+                confs = np.empty((0,))   #creates an array without initializing the entries
+                ids = np.empty((0,), dtype=int)
+                scores = np.empty((0,))
+
+
+            #----------------------choose who to follow with weighted score and stealable lock-----------------
+            status = "Searching..."
+            target_idx = None
+            locked_present = (locked_id is not None) and (locked_id in ids)
+
+
+            if locked_present:
+                missing = 0
+                li = int(np.where(ids == locked_id)[0][0])  #index of our locked person
+                locked_eff = scores[li] + bonus #target score with the stickiness bonus
+
+                #find the best OTHER person (mask out our own index)
+                if len(ids) > 1:
+                    masked = scores.copy()
+                    masked[li] = -np.inf
+                    ci = int(masked.argmax())
+                    challenger_won = masked[ci] > locked_eff
+
+                else:
+                    ci = None
+                    challenger_won = False
+
+                if challenger_won:
+                    cand_id = int(ids[ci])
+                    if cand_id == pending_id:
+                        steal_counter += 1
+                    else:
+                        pending_id = cand_id
+                        steal_counter = 1
+
+                    if steal_counter >= patience: #stealing has occurred
+                        steal_count += 1
+                        locked_id = cand_id
+                        target_idx = ci
+                        pending_id = None
+                        steal_counter = 0
+                        status = "Tracking id %d" % locked_id
+                    else:
+                        target_idx = li #hold current target for now
+                        status = "Locked id %d (challenged by %d %d/%d)" % (locked_id, cand_id, steal_counter, patience)
+
+                else:
+                    pending_id = None
+                    steal_counter = 0
+                    target_idx = li
+                    status = "Tracking id %d" % locked_id
+
+            #scenario where target is gone (or we have no lock yet)
+            else:
+                if locked_id is not None:
+                    missing += 1
+
+                if (locked_id is None) or (missing >= LOST_GRACE_FRAMES):
+                    if len(ids) > 0:
+                        new_idx = int(scores.argmax())
+                        new_id = int(ids[new_idx])
+                        if (locked_id is not None) and (new_id != locked_id): #find a new person
+                            reacquire_count += 1
+                        locked_id = new_id
+                        missing = 0
+                        pending_id = None
+                        steal_counter = 0
+                        target_idx = new_idx
+                        status = "Tracking id %d" % locked_id
+                    else:
+                        locked_id = None #no one is around
+                        missing = 0
+                        pending_id = None
+                        steal_counter = 0
+                        status = "Searching..."
+                else:
+                    status = "Reacquiring id %d" % locked_id
+                    # highlight the provisional next target during the grace window
+                    if len(ids) > 0:
+                        cand_idx = int(scores.argmax())
+                        pending_id = int(ids[cand_idx])
+                        steal_counter = 0   # grace candidate is NOT a steal challenger; keep counts clean
+                    else:
+                        pending_id = None
+
+
+            #--------Act on the target------- same logic as before
+            if target_idx is not None:
+                x1, y1, x2, y2 = xyxy[target_idx].astype(int)
+
+                HEAD_FOCUS = 0.35 #0.0 is top of box, 0.5 is center, lower aims higher on body
+                #get center of body frame
+                body_cx = (x1 + x2) // 2
+                body_cy = (y1 + HEAD_FOCUS * (y2 - y1))
+                #body_cy = (y1 + y2) // 2
+
+                #find how many pixels the body is from the center of the screen
+                dx = body_cx - cx
+                dy = body_cy - cy
+
+
+                #PAN axis-------------------
+                if abs(dx) <= DEADZONE:
+                    pan_PID.reset()
+
+                else:
+                    error_pan_degree = (dx / WIDTH) * HORIZONTAL_FOV
+                    pan_angle += PAN_DIRECTION * pan_PID.update(error_pan_degree, dt)
+                    pan_angle = clamp(pan_angle, -ANGLE_LIMIT, ANGLE_LIMIT)
+
+                #TILT AXIS--------------------
+                if abs(dy) <= DEADZONE:
+                    tilt_PID.reset()
+                else:
+                    error_tilt_degree = (dy / HEIGHT) * VERTICAL_FOV
+                    tilt_angle += TILT_DIRECTION * tilt_PID.update(error_tilt_degree, dt)
+                    tilt_angle = clamp(tilt_angle, TILT_MIN, TILT_MAX)
+
+                #command the servos
+                pan_pwm.change_duty_cycle(angle_to_duty(pan_angle + 90))
+                tilt_pwm.change_duty_cycle(angle_to_duty(tilt_angle))
+            else:
+                #no active target (searching, or holding through a short dropout)
+                pan_PID.reset()
+                tilt_PID.reset()
+                
+
+
+            #-----------NEW draw everyone in frame: green = locked, yellow = challenger, grey = ignored
+            for i in range(len(ids)):
+                bx1, by1, bx2, by2 = xyxy[i].astype(int)
+
+                if i == target_idx:
+                    color, thick = (0, 255, 0), 2
+                    label = "id %d LOCK s%.2f" % (ids[i], scores[i])
+
+                elif pending_id is not None and ids[i] == pending_id:
+                    color, thick = (0, 255, 255), 2
+                    if locked_present:
+                        # a steal is building: our target is still here and this one is out-scoring it
+                        label = "id %d CHAL %d/%d s%.2f" % (ids[i], steal_counter, patience, scores[i])
+                    else:
+                        # grace countdown: our target is gone, this is who we'll grab if it stays gone
+                        label = "id %d ACQ %d/%d s%.2f" % (ids[i], missing, LOST_GRACE_FRAMES, scores[i])
+
+                else:
+                    color, thick = (160, 160, 160), 1
+                    label = "id %d s%.2f" % (ids[i], scores[i])
+
+                cv2.rectangle(frame, (bx1, by1), (bx2, by2), color, thick)
+                cv2.putText(frame, label, (bx1, by1 - 6), cv2.FONT_HERSHEY_SIMPLEX, 0.45, color, 1)
+
+            # --- overlays ---
+            # orange detection-area guide box
+            cv2.rectangle(frame, (DETECT_MARGIN, DETECT_MARGIN),(WIDTH - DETECT_MARGIN, HEIGHT - DETECT_MARGIN), (0, 165, 255), 1)
+            # cyan deadzone box at center
+            cv2.rectangle(frame, (cx - DEADZONE, cy - DEADZONE), (cx + DEADZONE, cy + DEADZONE), (255, 255, 0), 1)
+            # center crosshair
+            cv2.drawMarker(frame, (cx, cy), (0, 255, 255), cv2.MARKER_CROSS, 12, 1)
+
+            #text
+            cv2.putText(frame, "%s  %.0f FPS" % (status, fps), (8, 20), cv2.FONT_HERSHEY_SIMPLEX, 0.5, (255, 255, 255), 1)
+            cv2.putText(frame, "pan %.1f  tilt %.1f" % (pan_angle, tilt_angle),(8, 40), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            cv2.putText(frame, "infer %.0f ms" % infer_ms, (8, 60), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+            #NEW OVERLAYS
+            elapsed_min = max((now - track_start) / 60.0, 1e-6)
+            steal_pm = steal_count / elapsed_min
+            reacq_pm = reacquire_count / elapsed_min
+            cv2.putText(frame, "steals %d (%.1f/min)  reacq %d (%.1f/min)  people %d" % (steal_count, steal_pm, reacquire_count, reacq_pm, len(ids)), (8, 80), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+            cv2.putText(frame, "bonus %.2f  patience %d" % (bonus, patience), (8, 100), cv2.FONT_HERSHEY_SIMPLEX, 0.45, (255, 255, 255), 1)
+
+
+            # PID term readout (very useful while tuning)
+            cv2.putText(frame, "PAN  P%+.2f I%+.2f D%+.2f" % (pan_PID.last_p, pan_PID.last_i, pan_PID.last_d), (8, HEIGHT - 28), cv2.FONT_HERSHEY_SIMPLEX, 0.4,(0, 255, 0), 1)
+            cv2.putText(frame, "TILT P%+.2f I%+.2f D%+.2f" % (tilt_PID.last_p, tilt_PID.last_i, tilt_PID.last_d), (8, HEIGHT - 12), cv2.FONT_HERSHEY_SIMPLEX, 0.4, (0, 255, 0), 1)
+
+            # --- push frame to the browser ---
+            ok, jpeg = cv2.imencode(".jpg", frame)
+            if ok:
+                output.update(jpeg.tobytes())
+
+    except KeyboardInterrupt:
+        print("\nStopping...")
+    finally:
+        laser.off()
+        pan_pwm.stop()
+        tilt_pwm.stop()
+        cam.stop()
+        server.shutdown()
+
+        #log one sweep row
+        runtime = time.monotonic() - track_start
+        mins = max(runtime / 60.0, 1e-6)
+        steal_pm = steal_count / mins
+        reacq_pm = reacquire_count / mins
+        row = "%.3f,%d,%d,%d,%.1f,%.2f,%.2f" % (bonus, patience, steal_count, reacquire_count, runtime, steal_pm, reacq_pm)
+        print("\nSweep row (bonus,patience,steals,reacquires,runtime_s,steals_per_min,reacq_per_min):")
+        print(row)
+        new_file = not os.path.exists("sweep.csv")
+        with open("sweep.csv", "a") as f:
+            if new_file:
+                f.write("bonus,patience,steals,reacquires,runtime_s,steals_per_min,reacq_per_min\n")
+            f.write(row + "\n")
+        print("Added to sweep.csv")
+
+
+
+if __name__ == '__main__':
+    ap = argparse.ArgumentParser(description="M6 turret tracker")
+    ap.add_argument("--bonus", type=float, default=CURRENT_TARGET_BONUS, help="current-target stickiness bonus (the sweep knob)")
+    ap.add_argument("--patience", type=int, default=STEAL_PATIENCE, help="frames a challenger must win before stealing the lock")
+    ap.add_argument("--secs", type=float, default=0.0, help="auto-stop after N seconds (0 to run until Ctrl + C)")
+    args = ap.parse_args()
+    main(args.bonus, args.patience, args.secs)

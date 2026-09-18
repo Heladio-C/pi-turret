@@ -17,11 +17,21 @@ HEIGHT = 360 #or 1280 x 720
 DEFAULT_SECS = 30
 OUT_DIR = Path(__file__).resolve().parent / "dataset" / "clips"
 
-
+#turn free text label into a filename fragement
 def slugify(text:str) -> str:
-    pass
+    #remove whitespace, then turn all uppercase letters to lowercase 
+
+    text = re.sub(r"[^a-z0-9]+", "_", text.strip().lower())
+    return text.strip("_") or "clip"    
 
 
 def record_one(picam, label: str, secs: int) -> Path:
     pass
 
+
+def main():
+    pass
+
+
+if __name__ == "__main__":
+    main()

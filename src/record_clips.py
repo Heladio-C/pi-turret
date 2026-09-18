@@ -15,7 +15,7 @@ WIDTH = 640
 HEIGHT = 360 #or 1280 x 720
 
 DEFAULT_SECS = 30
-OUT_DIR = Path(__file__).resolve().parent / "dataset" / "clips"
+OUTPUT_DIR = Path(__file__).resolve().parent / "dataset" / "clips"
 
 #turn free text label into a filename fragement
 def slugify(text:str) -> str:
@@ -26,7 +26,25 @@ def slugify(text:str) -> str:
 
 
 def record_one(picam, label: str, secs: int) -> Path:
-    pass
+    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
+    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
+    path = OUTPUT_DIR / f"{slugify(label)}_{stamp}.avi"
+
+    #unpack string MPJPG 
+    fourcc = cv2.VideoWriter_fourcc(*"MJPG")
+    #arguments: output file destination, 32-bit codec tag, fram rate, and frame dimensions using tuple
+    writer = cv2.VideoWriter(str(path), fourcc, 30.0, (WIDTH, HEIGHT))
+
+    if not writer.isOpened():
+        raise RuntimeError("could not open video writer ")
+
+    for n in (3, 2, 1):
+        print(f"  recording in {n}...", end="\r", flush = True)
+        time.sleep(1)
+
+    print(" " * 36, end="\r")
+
+
 
 
 def main():

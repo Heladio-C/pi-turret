@@ -43,7 +43,25 @@ def record_one(picam, label: str, secs: int) -> Path:
         time.sleep(1)
 
     print(" " * 36, end="\r")
+    frames = 0
+    t0 = time.time()
 
+    try:
+        while time.time() - t0 < secs:
+            frame = picam.capture_array()
+            writer.write(frame)
+            frames += 1
+            print(f"  \u25cf REC {label!r}  {time.time()-t0:4.1f}/{secs}s  "
+                  f"{frames} frames", end="\r", flush=True)
+
+
+    except KeyboardInterrupt:
+        print("Ended early")
+    finally:
+        writer.release()
+
+    print(f" saved {frames} frames to {path}")
+    return path
 
 
 

@@ -1,5 +1,5 @@
 """
-MJPEG stream to the browser at http://turretpi.local:8000
+MJPEG stream to the browser at http://100.80.22.112:8000
 Import `output` and push JPEG bytes to it; call start_server() once to serve.
 """
 

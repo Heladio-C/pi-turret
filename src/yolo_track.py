@@ -49,7 +49,7 @@ def main(bonus, patience, run_secs):
     turret = Turret()
     selector = TargetSelector()
     server = start_server()
-    print("Streaming at http://turretpi.local:8000  (Ctrl+C to stop)")
+    print("Streaming at http://100.80.22.112:8000  (Ctrl+C to stop)")
     print("Run config -> bonus=%.3f  patience=%d  secs=%.0f" % (bonus, patience, run_secs))
 
     cx = WIDTH // 2

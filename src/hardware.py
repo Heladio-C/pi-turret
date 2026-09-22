@@ -90,3 +90,13 @@ class Turret:
         self.laser.off()
         self.pan_pwm.stop()
         self.tilt_pwm.stop()
+
+
+    def set_pan(self, angle):
+        """aim the pan axis at an absolute angle """
+        self.pan_angle = clamp(angle, -ANGLE_LIMIT, ANGLE_LIMIT)
+        self.pan_pwm.change_duty_cycle(angle_to_duty(self.pan_angle + 90))
+
+    def set_tilt(self, angle):
+        self.tilt_angle = clamp(angle, TILT_MIN, TILT_MAX)
+        self.tilt_pwm.change_duty_cycle(angle_to_duty(self.tilt_angle))

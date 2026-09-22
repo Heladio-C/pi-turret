@@ -163,7 +163,7 @@ python3 yolo_track.py                                   # defaults, Ctrl+C to st
 python3 yolo_track.py --bonus 0.2 --patience 3 --secs 120   # timed run, logs a row to sweep.csv
 ```
 
-Then open **http://turretpi.local:8000** in a browser to watch the stream. Reproduce the
+Then open **http://100.80.22.112:8000** in a browser to watch the stream. Reproduce the
 M6 sweep with:
 
 ```bash

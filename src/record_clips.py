@@ -44,3 +44,33 @@ print("Type a label before each burst. Prese Enter on an empty line to quit.\n")
 
 
 #helper turn a typed label into safe filename piece
+def make_slug(text):
+    #open hand corner 
+    #.strip() removes whitespaces at end or start
+    #.lower() lowercase all 
+    #.replace(" ", "_") replace all sapces for _
+    return text.strip().lower().replace(" ", "_")
+
+
+
+#main loop 
+
+
+total_saved = 0
+
+try:
+
+    while True:
+        if total_saved >= MAX_TOTAL_IMAGES:
+            print(f"Hit the safety cap of {MAX_TOTAL_IMAGES} images. Stopping")
+            break
+
+        label = input("Label for this burst (Enter to quit): ")
+
+        if label.strip() == "":
+            print("Goodbye!")
+            break
+
+finally:
+    picam2.stop()
+    

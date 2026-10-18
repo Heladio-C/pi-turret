@@ -1,73 +1,76 @@
+#record_clips.py
+#milestone 7: collect hand photos for fine tuning YOLO
+
+# How to use: 
+# type a short label describing what you will show to the camera, counts down then takes a burst of photos whiile you move your
+# hand around
+# each photo is saved as a jpg to annotate later, no video files , 
 
 
 
-import argparse
-import re
+
+from picamera2 import Picamera2 # controls the pi camera 
+import cv2 # opencv to save images 
 import time
-import cv2
-
 from datetime import datetime
-from pathlib import Path
+import os
 
-from picamera2 import Picamera2
 
+#settings 
+FOLDER_NAME = "dataset/images"
 WIDTH = 640
-HEIGHT = 360 #or 1280 x 720
-
-DEFAULT_SECS = 30
-OUTPUT_DIR = Path(__file__).resolve().parent / "dataset" / "clips"
-
-#turn free text label into a filename fragement
-def slugify(text:str) -> str:
-    #remove whitespace, then turn all uppercase letters to lowercase 
-
-    text = re.sub(r"[^a-z0-9]+", "_", text.strip().lower())
-    return text.strip("_") or "clip"    
+HEIGHT = 360
 
 
-def record_one(picam, label: str, secs: int) -> Path:
-    OUTPUT_DIR.mkdir(parents=True, exist_ok=True)
-    stamp = datetime.now().strftime("%Y%m%d_%H%M%S")
-    path = OUTPUT_DIR / f"{slugify(label)}_{stamp}.avi"
-
-    #unpack string MPJPG 
-    fourcc = cv2.VideoWriter_fourcc(*"MJPG")
-    #arguments: output file destination, 32-bit codec tag, fram rate, and frame dimensions using tuple
-    writer = cv2.VideoWriter(str(path), fourcc, 30.0, (WIDTH, HEIGHT))
-
-    if not writer.isOpened():
-        raise RuntimeError("could not open video writer ")
-
-    for n in (3, 2, 1):
-        print(f"  recording in {n}...", end="\r", flush = True)
-        time.sleep(1)
-
-    print(" " * 36, end="\r")
-    frames = 0
-    t0 = time.time()
-
-    try:
-        while time.time() - t0 < secs:
-            frame = picam.capture_array()
-            writer.write(frame)
-            frames += 1
-            print(f"  \u25cf REC {label!r}  {time.time()-t0:4.1f}/{secs}s  "
-                  f"{frames} frames", end="\r", flush=True)
+IMAGES_PER_CLIP = 20 # how many photos each burst takes
+SECONDS_BETWEEN = 0.5 # pause between photos
+COUNTDOWN = 3
 
 
-    except KeyboardInterrupt:
-        print("Ended early")
-    finally:
-        writer.release()
+MAX_TOTAL_IMAGES = 600
 
-    print(f" saved {frames} frames to {path}")
-    return path
+#get camera ready 
+os.makedirs(FOLDER_NAME, exist_ok=True)
+
+picam2 = Picamera2()
+#configuration is just the camera's settings, 
+camera_config = picam2.create_video_configuration(main={"size": (WIDTH, HEIGHT), "format": "RGB888"})
+picam2.configure(camera_config)
+picam2.start()
+time.sleep(1)
+
+print(f"Camera Ready! Saving pics to: {FOLDER_NAME}")
+print("Type a label before each burst. Prese Enter on an empty line to quit.\n")
+
+
+#helper turn a typed label into safe filename piece
+def make_slug(text):
+    #open hand corner 
+    #.strip() removes whitespaces at end or start
+    #.lower() lowercase all 
+    #.replace(" ", "_") replace all sapces for _
+    return text.strip().lower().replace(" ", "_")
 
 
 
-def main():
-    pass
+#main loop 
 
 
-if __name__ == "__main__":
-    main()
+total_saved = 0
+
+try:
+
+    while True:
+        if total_saved >= MAX_TOTAL_IMAGES:
+            print(f"Hit the safety cap of {MAX_TOTAL_IMAGES} images. Stopping")
+            break
+
+        label = input("Label for this burst (Enter to quit): ")
+
+        if label.strip() == "":
+            print("Goodbye!")
+            break
+
+finally:
+    picam2.stop()
+    

@@ -6,6 +6,7 @@ Change behavior by editing this file -- no other module hard-codes these values.
 # --- camera / frame ---
 WIDTH = 640
 HEIGHT = 360
+SENSOR_MODE = (2304, 1296)
 HORIZONTAL_FOV = 66.0
 VERTICAL_FOV = 38.0
 

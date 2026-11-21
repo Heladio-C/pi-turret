@@ -71,6 +71,12 @@ try:
             print("Goodbye!")
             break
 
+        slug = make_slug(label)
+
+        #a timestamp keeps every bursts files unique 
+        stamp = datetime.datetime.now().strftime("%Y%m%d_%H%M%S")
+
+
 finally:
     picam2.stop()
     

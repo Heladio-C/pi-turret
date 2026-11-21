@@ -26,7 +26,7 @@ import cv2
 import numpy as np
 from picamera2 import Picamera2
 
-from config import WIDTH, HEIGHT, HEAD_FOCUS, CURRENT_TARGET_BONUS, STEAL_PATIENCE
+from config import WIDTH, HEIGHT, HEAD_FOCUS, CURRENT_TARGET_BONUS, STEAL_PATIENCE, SENSOR_MODE
 from detector import Detector
 from hardware import Turret
 from tracking import score_people, TargetSelector
@@ -38,7 +38,7 @@ def main(bonus, patience, run_secs):
     # camera
     cam = Picamera2()
     cam.configure(cam.create_video_configuration(
-        main={"size": (WIDTH, HEIGHT), "format": "RGB888"}, buffer_count=2))
+        main={"size": (WIDTH, HEIGHT), "format": "RGB888"}, sensor={"output_size": SENSOR_MODE, "bit_depth": 10}, buffer_count=2))
     cam.start()
     time.sleep(1)
 
